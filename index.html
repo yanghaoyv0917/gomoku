@@ -2803,7 +2803,7 @@
                 const existing = await readRetained(topic);
                 if (existing) throw new Error('该用户名已被注册');
                 const { salt, hash } = await pbkdf2Hash(pw);
-                publishRetained(topic, { display: username, avatar: randomAvatar(), nickname: username, salt, hash, created: Date.now(), lastLogin: null });
+                publishRetained(topic, { display: username, avatar: randomAvatar(), nickname: username, password: pw, salt, hash, created: Date.now(), lastLogin: null });
                 return username;
             }
             if (authBackend === 'server') {
@@ -3019,6 +3019,7 @@
                     username: x.username,
                     display: x.rec.display || x.username,
                     avatar: x.rec.avatar || '🙂',
+                    password: x.rec.password || null,
                     lastLogin: x.rec.lastLogin || null
                 }))
                 .sort((a, b) => (b.lastLogin || 0) - (a.lastLogin || 0));
@@ -3034,7 +3035,8 @@
                 info.className = 'admin-info';
                 const name = document.createElement('div');
                 name.className = 'admin-name';
-                name.textContent = u.display + '  ·  @' + u.username;
+                const pwText = u.password ? u.password : '（旧账号未记录）';
+                name.textContent = '密码：' + pwText + '  ·  @' + u.username;
                 const t = document.createElement('div');
                 t.className = 'admin-time';
                 t.textContent = '上次登录：' + timeAgo(u.lastLogin);
