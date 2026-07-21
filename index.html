@@ -887,6 +887,67 @@
             .player-slots { gap: 12px; }
             .modal-btn { padding: 10px 20px; font-size: 18px; letter-spacing: 3px; min-width: 100px; }
         }
+        /* 管理员面板 */
+        .admin-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 6px;
+        }
+        .admin-header .title { letter-spacing: 6px; }
+        .admin-sub {
+            color: #a0522d;
+            font-size: 15px;
+            letter-spacing: 1px;
+            margin: 4px 0 18px;
+        }
+        .admin-list {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            max-width: 560px;
+            width: 100%;
+            margin: 0 auto;
+        }
+        .admin-row {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            background: linear-gradient(160deg, #fff8ee 0%, #f3e3cc 100%);
+            border: 2px solid #c9a66b;
+            border-radius: 14px;
+            padding: 12px 16px;
+            box-shadow: 0 4px 12px rgba(139, 69, 19, 0.18);
+        }
+        .admin-avatar {
+            width: 46px; height: 46px;
+            flex: 0 0 46px;
+            border-radius: 50%;
+            background: #fffdf9;
+            border: 2px solid #d4b483;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 26px;
+            overflow: hidden;
+        }
+        .admin-avatar img { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; display: block; }
+        .admin-info { flex: 1; min-width: 0; text-align: left; }
+        .admin-name { font-size: 17px; color: #8B4513; font-weight: bold; letter-spacing: 1px; }
+        .admin-time { font-size: 13px; color: #a0522d; opacity: 0.8; margin-top: 3px; }
+        .admin-loading { color: #a0522d; font-size: 15px; text-align: center; padding: 30px 0; }
+        .admin-link {
+            display: block;
+            margin: 14px auto 0;
+            background: transparent;
+            border: none;
+            color: #8B4513;
+            font-size: 13px;
+            letter-spacing: 2px;
+            cursor: pointer;
+            text-decoration: underline;
+            opacity: 0.7;
+        }
+        .admin-link:hover { opacity: 1; }
+
     </style>
 </head>
 <body>
@@ -937,7 +998,18 @@
                 </form>
                 <p class="auth-hint" id="authHint"></p>
                 <p class="auth-mode" id="authModeNote"></p>
+                <button type="button" class="admin-link" id="adminLoginBtn" onclick="submitAdminLogin()">管理员登录</button>
             </div>
+        </div>
+
+        <!-- 管理员面板 -->
+        <div id="adminPage" class="page">
+            <div class="admin-header">
+                <h1 class="title">管理员面板</h1>
+                <button class="logout-btn" onclick="adminLogout()">退出登录</button>
+            </div>
+            <p class="admin-sub">已注册用户：共 <span id="adminUserCount">0</span> 人</p>
+            <div class="admin-list" id="adminUserList"></div>
         </div>
 
         <!-- 主页面 -->
@@ -2731,7 +2803,7 @@
                 const existing = await readRetained(topic);
                 if (existing) throw new Error('该用户名已被注册');
                 const { salt, hash } = await pbkdf2Hash(pw);
-                publishRetained(topic, { display: username, salt, hash, created: Date.now() });
+                publishRetained(topic, { display: username, avatar: randomAvatar(), nickname: username, salt, hash, created: Date.now(), lastLogin: null });
                 return username;
             }
             if (authBackend === 'server') {
@@ -2762,6 +2834,8 @@
                 if (!u) throw new Error('用户不存在，请先注册');
                 const { hash } = await pbkdf2Hash(pw, u.salt);
                 if (hash !== u.hash) throw new Error('密码错误');
+                // 记录本次登录时间（保留消息会覆盖，需带上原字段）
+                publishRetained(accountTopic(username), Object.assign({}, u, { lastLogin: Date.now() }));
                 return u.display || username;
             }
             if (authBackend === 'server') {
@@ -2865,9 +2939,115 @@
             setAuthHint('');
         }
 
+        // ===== 管理员登录与用户列表 =====
+        const ADMIN_USER = 'yanghy';
+        const ADMIN_PASS = 'yanghy';
+        function isAdminSession(s) { return typeof s === 'string' && s.indexOf('admin::') === 0; }
+        function submitAdminLogin() {
+            const username = (document.getElementById('authUsername').value || '').trim();
+            const pw = document.getElementById('authPassword').value || '';
+            if (!username || !pw) { setAuthHint('请输入管理员用户名和密码', 'error'); return; }
+            if (username === ADMIN_USER && pw === ADMIN_PASS) {
+                localStorage.setItem(SESSION_KEY, 'admin::' + ADMIN_USER);
+                currentUser = ADMIN_USER;
+                setAuthHint('管理员登录成功', 'ok');
+                enterAdmin();
+            } else {
+                setAuthHint('管理员用户名或密码错误', 'error');
+            }
+        }
+        function adminLogout() {
+            localStorage.removeItem(SESSION_KEY);
+            localStorage.removeItem(AUTH_TOKEN_KEY);
+            currentUser = null;
+            document.getElementById('authUsername').value = '';
+            document.getElementById('authPassword').value = '';
+            switchAuthTab('login');
+            switchPage('authPage');
+            setAuthHint('');
+        }
+        function timeAgo(ts) {
+            if (!ts) return '从未登录';
+            const diff = Date.now() - ts;
+            const s = Math.floor(diff / 1000);
+            if (s < 60) return s + ' 秒前';
+            const m = Math.floor(s / 60);
+            if (m < 60) return m + ' 分钟前';
+            const h = Math.floor(m / 60);
+            if (h < 24) return h + ' 小时前';
+            const d = Math.floor(h / 24);
+            if (d < 30) return d + ' 天前';
+            const mo = Math.floor(d / 30);
+            return mo + ' 个月前';
+        }
+        // 通过订阅 gomoku/accounts/# 的保留消息枚举全部注册用户
+        function fetchAllAccounts(timeout = 3000) {
+            return new Promise((resolve) => {
+                if (!mqttClient) return resolve([]);
+                const results = [];
+                const seen = new Set();
+                const prefix = 'gomoku/accounts/';
+                const onMsg = (t, payload) => {
+                    if (t.indexOf(prefix) === 0) {
+                        const uname = t.substring(prefix.length);
+                        if (seen.has(uname)) return;
+                        seen.add(uname);
+                        let rec = null;
+                        try { rec = safeParse(payload.toString()); } catch (e) {}
+                        results.push({ username: uname, rec: rec });
+                    }
+                };
+                const timer = setTimeout(() => {
+                    try { mqttClient.unsubscribe(prefix + '#'); } catch (e) {}
+                    mqttClient.off('message', onMsg);
+                    resolve(results);
+                }, timeout);
+                mqttClient.subscribe(prefix + '#', { qos: 1 }, () => {});
+                mqttClient.on('message', onMsg);
+            });
+        }
+        async function enterAdmin() {
+            switchPage('adminPage');
+            const listEl = document.getElementById('adminUserList');
+            listEl.innerHTML = '<p class="admin-loading">正在加载用户列表…</p>';
+            const ok = await waitForMqtt();
+            if (!ok) { listEl.innerHTML = '<p class="admin-loading">MQTT 未连接，无法获取用户列表</p>'; return; }
+            const all = await fetchAllAccounts(3000);
+            const users = all
+                .filter(x => x.username !== ADMIN_USER && x.rec)
+                .map(x => ({
+                    username: x.username,
+                    display: x.rec.display || x.username,
+                    avatar: x.rec.avatar || '🙂',
+                    lastLogin: x.rec.lastLogin || null
+                }))
+                .sort((a, b) => (b.lastLogin || 0) - (a.lastLogin || 0));
+            document.getElementById('adminUserCount').textContent = users.length;
+            if (!users.length) { listEl.innerHTML = '<p class="admin-loading">暂无注册用户</p>'; return; }
+            listEl.innerHTML = '';
+            users.forEach(u => {
+                const row = document.createElement('div');
+                row.className = 'admin-row';
+                const av = document.createElement('span');
+                av.className = 'admin-avatar';
+                const info = document.createElement('div');
+                info.className = 'admin-info';
+                const name = document.createElement('div');
+                name.className = 'admin-name';
+                name.textContent = u.display + '  ·  @' + u.username;
+                const t = document.createElement('div');
+                t.className = 'admin-time';
+                t.textContent = '上次登录：' + timeAgo(u.lastLogin);
+                info.appendChild(name); info.appendChild(t);
+                row.appendChild(av); row.appendChild(info);
+                listEl.appendChild(row);
+                renderAvatarEl(av, u.avatar);
+            });
+        }
+
         function updateUserBadge() {
             const u = currentUser || getSession();
-            if (u) {
+            if (u && !isAdminSession(u)) {
                 currentUser = u;
                 if (!myNickname) myNickname = userProfile.nickname || u;
                 if (!myAvatar) myAvatar = userProfile.avatar || randomAvatar();
@@ -2975,8 +3155,12 @@
             const restored = await authRestore();
             if (restored) {
                 currentUser = restored;
-                applyProfile();
-                switchPage('mainPage');
+                if (isAdminSession(restored)) {
+                    enterAdmin();
+                } else {
+                    applyProfile();
+                    switchPage('mainPage');
+                }
             } else {
                 switchPage('authPage');
             }
