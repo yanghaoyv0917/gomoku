@@ -895,6 +895,21 @@
             margin-bottom: 6px;
         }
         .admin-header .title { letter-spacing: 6px; }
+        /* 放大的管理员退出按钮 */
+        .admin-header .admin-logout-btn {
+            border: none;
+            background: #c44;
+            color: #fff;
+            font-size: 18px;
+            font-weight: bold;
+            letter-spacing: 2px;
+            padding: 12px 30px;
+            border-radius: 26px;
+            cursor: pointer;
+            transition: background 0.2s ease, transform 0.1s ease;
+        }
+        .admin-header .admin-logout-btn:hover { background: #a33; }
+        .admin-header .admin-logout-btn:active { transform: scale(0.97); }
         .admin-sub {
             color: #a0522d;
             font-size: 15px;
@@ -933,6 +948,21 @@
         .admin-info { flex: 1; min-width: 0; text-align: left; }
         .admin-name { font-size: 17px; color: #8B4513; font-weight: bold; letter-spacing: 1px; }
         .admin-time { font-size: 13px; color: #a0522d; opacity: 0.8; margin-top: 3px; }
+        /* 用户行右侧注销按钮 */
+        .admin-del-btn {
+            flex: 0 0 auto;
+            border: none;
+            background: #b5651d;
+            color: #fff;
+            font-size: 14px;
+            letter-spacing: 1px;
+            padding: 9px 16px;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: background 0.2s ease, transform 0.1s ease;
+        }
+        .admin-del-btn:hover { background: #8a4b14; }
+        .admin-del-btn:active { transform: scale(0.96); }
         .admin-loading { color: #a0522d; font-size: 15px; text-align: center; padding: 30px 0; }
         .admin-link {
             display: block;
@@ -1006,7 +1036,7 @@
         <div id="adminPage" class="page">
             <div class="admin-header">
                 <h1 class="title">管理员面板</h1>
-                <button class="logout-btn" onclick="adminLogout()">退出登录</button>
+                <button class="admin-logout-btn" onclick="adminLogout()">退出登录</button>
             </div>
             <p class="admin-sub">已注册用户：共 <span id="adminUserCount">0</span> 人</p>
             <div class="admin-list" id="adminUserList"></div>
@@ -2966,6 +2996,22 @@
             switchPage('authPage');
             setAuthHint('');
         }
+        // 管理员注销指定用户账号：向该账号主题发布空保留消息即可清除其记录
+        function deleteAccount(btn, username) {
+            if (!confirm('确定要注销用户「' + username + '」的账号吗？\n该用户将无法再登录，且操作不可恢复。')) return;
+            const topic = accountTopic(username);
+            if (mqttReady()) {
+                mqttClient.publish(topic, '', { qos: 1, retain: true });
+            } else {
+                alert('MQTT 未连接，注销失败，请重试');
+                return;
+            }
+            const row = btn.closest('.admin-row');
+            if (row) row.remove();
+            const cnt = document.getElementById('adminUserCount');
+            const n = Math.max(0, (parseInt(cnt.textContent, 10) || 0) - 1);
+            cnt.textContent = n;
+        }
         function timeAgo(ts) {
             if (!ts) return '从未登录';
             const diff = Date.now() - ts;
@@ -3041,7 +3087,12 @@
                 t.className = 'admin-time';
                 t.textContent = '上次登录：' + timeAgo(u.lastLogin);
                 info.appendChild(name); info.appendChild(t);
-                row.appendChild(av); row.appendChild(info);
+                const del = document.createElement('button');
+                del.className = 'admin-del-btn';
+                del.textContent = '注销';
+                del.title = '注销该用户账号（不可恢复）';
+                del.onclick = () => deleteAccount(del, u.username);
+                row.appendChild(av); row.appendChild(info); row.appendChild(del);
                 listEl.appendChild(row);
                 renderAvatarEl(av, u.avatar);
             });
