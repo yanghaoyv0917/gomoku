@@ -1,0 +1,3030 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>五子棋 - 联机对战</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Microsoft YaHei', '微软雅黑', Arial, sans-serif;
+            background: linear-gradient(135deg, #f5e6d3 0%, #e8d4b8 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            overflow-x: hidden;
+        }
+
+        .container {
+            text-align: center;
+            position: relative;
+            z-index: 2;
+            padding: 20px;
+        }
+
+        /* 龙纹装饰背景 */
+        .dragon-pattern {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 800px;
+            height: 600px;
+            opacity: 0.06;
+            z-index: 1;
+            pointer-events: none;
+        }
+
+        /* 标题样式 */
+        .title-wrapper {
+            margin-bottom: 80px;
+            position: relative;
+        }
+
+        .title {
+            font-size: clamp(64px, 18vw, 120px);
+            font-weight: bold;
+            color: #8B4513;
+            text-shadow:
+                3px 3px 6px rgba(139, 69, 19, 0.3),
+                -1px -1px 2px rgba(255, 255, 255, 0.5);
+            letter-spacing: clamp(8px, 4vw, 20px);
+            position: relative;
+            display: inline-block;
+            font-family: 'KaiTi', '楷体', serif;
+        }
+
+        .title::before,
+        .title::after {
+            content: '☯';
+            position: absolute;
+            top: 50%;
+            transform: translateY(-50%);
+            font-size: 60px;
+            color: #a0522d;
+            opacity: 0.6;
+        }
+
+        .title::before { left: -80px; }
+        .title::after { right: -80px; }
+
+        .subtitle {
+            color: #8B4513;
+            font-size: 24px;
+            margin-bottom: 40px;
+            opacity: 0.7;
+            letter-spacing: 5px;
+        }
+
+        .start-btn {
+            background: linear-gradient(145deg, #c9a66b, #a67c52);
+            color: #fff;
+            border: 3px solid #8B4513;
+            padding: 25px 80px;
+            font-size: 32px;
+            font-family: 'KaiTi', '楷体', serif;
+            letter-spacing: 10px;
+            cursor: pointer;
+            border-radius: 15px;
+            box-shadow:
+                0 8px 20px rgba(139, 69, 19, 0.4),
+                inset 0 2px 4px rgba(255, 255, 255, 0.3);
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .main-btn-group {
+            display: flex;
+            gap: 30px;
+            justify-content: center;
+            align-items: center;
+            flex-wrap: wrap;
+            margin-top: 10px;
+        }
+        .main-btn-group .start-btn {
+            padding: 22px 55px;
+            font-size: 28px;
+            letter-spacing: 6px;
+        }
+
+        .start-btn:hover {
+            transform: translateY(-3px);
+            box-shadow:
+                0 12px 28px rgba(139, 69, 19, 0.5),
+                inset 0 2px 4px rgba(255, 255, 255, 0.4);
+            background: linear-gradient(145deg, #d4af74, #b8895e);
+        }
+
+        .start-btn:active {
+            transform: translateY(0);
+            box-shadow:
+                0 4px 12px rgba(139, 69, 19, 0.4),
+                inset 0 2px 4px rgba(0, 0, 0, 0.2);
+        }
+
+        .start-btn::before {
+            content: '龍';
+            position: absolute;
+            right: 15px;
+            top: 50%;
+            transform: translateY(-50%);
+            font-size: 24px;
+            opacity: 0.4;
+        }
+
+        .piece-decoration {
+            display: flex;
+            justify-content: center;
+            gap: 40px;
+            margin-top: 60px;
+        }
+
+        /* ===== 登录 / 注册 页 ===== */
+        .auth-card {
+            width: min(420px, 90vw);
+            margin: 0 auto;
+            background: linear-gradient(160deg, #fff8ee 0%, #f3e3cc 100%);
+            border: 3px solid #c9a66b;
+            border-radius: 20px;
+            padding: 40px 34px 34px;
+            box-shadow: 0 14px 36px rgba(139, 69, 19, 0.28), inset 0 2px 4px rgba(255, 255, 255, 0.5);
+        }
+        .auth-logo {
+            font-size: 52px;
+            font-weight: bold;
+            color: #8B4513;
+            letter-spacing: 12px;
+            font-family: 'KaiTi', '楷体', serif;
+            text-shadow: 2px 2px 4px rgba(139, 69, 19, 0.25);
+        }
+        .auth-tagline {
+            color: #a0522d;
+            font-size: 16px;
+            letter-spacing: 2px;
+            margin: 8px 0 26px;
+            opacity: 0.75;
+        }
+        .auth-tabs {
+            display: flex;
+            gap: 10px;
+            background: rgba(139, 69, 19, 0.08);
+            border-radius: 12px;
+            padding: 6px;
+            margin-bottom: 24px;
+        }
+        .auth-tab {
+            flex: 1;
+            padding: 12px 0;
+            font-size: 18px;
+            letter-spacing: 4px;
+            cursor: pointer;
+            border: none;
+            border-radius: 9px;
+            background: transparent;
+            color: #8B4513;
+            font-family: 'Microsoft YaHei', sans-serif;
+            transition: all 0.25s ease;
+        }
+        .auth-tab.active {
+            background: linear-gradient(145deg, #c9a66b, #a67c52);
+            color: #fff;
+            box-shadow: 0 4px 10px rgba(139, 69, 19, 0.35);
+        }
+        .auth-field { margin-bottom: 16px; }
+        .auth-input {
+            width: 100%;
+            padding: 14px 16px;
+            font-size: 17px;
+            border: 2px solid #d4b483;
+            border-radius: 11px;
+            background: #fffdf9;
+            color: #5b3a1a;
+            outline: none;
+            transition: border-color 0.2s ease, box-shadow 0.2s ease;
+            font-family: 'Microsoft YaHei', sans-serif;
+            box-sizing: border-box;
+        }
+        .auth-input:focus {
+            border-color: #a67c52;
+            box-shadow: 0 0 0 3px rgba(166, 124, 82, 0.18);
+        }
+        .auth-input::placeholder { color: #c2a87e; }
+        .auth-submit {
+            width: 100%;
+            margin-top: 8px;
+            padding: 15px 0;
+            font-size: 22px;
+            letter-spacing: 8px;
+            cursor: pointer;
+            border: 3px solid #8B4513;
+            border-radius: 13px;
+            background: linear-gradient(145deg, #c9a66b, #a67c52);
+            color: #fff;
+            font-family: 'KaiTi', '楷体', serif;
+            box-shadow: 0 6px 16px rgba(139, 69, 19, 0.35), inset 0 2px 4px rgba(255, 255, 255, 0.3);
+            transition: all 0.25s ease;
+        }
+        .auth-submit:hover {
+            transform: translateY(-2px);
+            background: linear-gradient(145deg, #d4af74, #b8895e);
+            box-shadow: 0 10px 22px rgba(139, 69, 19, 0.45);
+        }
+        .auth-submit:active { transform: translateY(0); }
+        .auth-hint {
+            margin-top: 14px;
+            min-height: 20px;
+            font-size: 14px;
+            letter-spacing: 1px;
+            text-align: center;
+        }
+        .auth-hint.error { color: #cc4433; }
+        .auth-hint.ok { color: #2f8f4f; }
+        .auth-mode {
+            margin-top: 10px;
+            font-size: 12px;
+            letter-spacing: 0.5px;
+            color: #b08d5b;
+            opacity: 0.85;
+        }
+        .auth-mode.ok { color: #2f8f4f; }
+
+        /* 主页面右上角用户徽标 */
+        .user-badge {
+            position: fixed;
+            top: 18px;
+            right: 18px;
+            z-index: 50;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            background: linear-gradient(145deg, #fff8ee, #f0ddc0);
+            border: 2px solid #c9a66b;
+            border-radius: 30px;
+            padding: 6px 8px 6px 16px;
+            box-shadow: 0 4px 12px rgba(139, 69, 19, 0.25);
+        }
+        .user-badge .uname {
+            font-size: 15px;
+            color: #8B4513;
+            letter-spacing: 1px;
+            max-width: 120px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .user-badge .logout-btn {
+            border: none;
+            background: #c44;
+            color: #fff;
+            font-size: 13px;
+            padding: 6px 12px;
+            border-radius: 20px;
+            cursor: pointer;
+            letter-spacing: 1px;
+            transition: background 0.2s ease;
+        }
+        .user-badge .logout-btn:hover { background: #a33; }
+        .user-badge .badge-avatar {
+            width: 32px; height: 32px;
+            border-radius: 50%;
+            background: #fff;
+            border: 2px solid #c9a66b;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 20px; line-height: 1;
+            cursor: pointer;
+            overflow: hidden;
+        }
+        .user-badge .badge-avatar img { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; display: block; }
+        .user-badge .uname { cursor: pointer; }
+        .user-badge .uname:hover, .user-badge .badge-avatar:hover { filter: brightness(1.05); }
+
+        .piece {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.3), inset 0 2px 4px rgba(255,255,255,0.3);
+        }
+        .piece.black { background: radial-gradient(circle at 30% 30%, #555, #000); }
+        .piece.white { background: radial-gradient(circle at 30% 30%, #fff, #ddd); border: 1px solid #ccc; }
+
+        /* ===== 页面通用 ===== */
+        .page {
+            display: none;
+            animation: fadeIn 0.5s ease-in;
+        }
+        .page.active { display: block; }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .prepare-title {
+            font-size: 64px;
+            color: #8B4513;
+            font-family: 'KaiTi', '楷体', serif;
+            margin-bottom: 20px;
+            text-shadow: 2px 2px 4px rgba(139, 69, 19, 0.3);
+        }
+        .prepare-subtitle {
+            font-size: 24px;
+            color: #a0522d;
+            margin-bottom: 60px;
+            letter-spacing: 3px;
+        }
+
+        .btn-group {
+            display: flex;
+            flex-direction: column;
+            gap: 30px;
+            align-items: center;
+        }
+
+        .action-btn {
+            width: 320px;
+            padding: 25px 50px;
+            font-size: 28px;
+            font-family: 'KaiTi', '楷体', serif;
+            letter-spacing: 8px;
+            cursor: pointer;
+            border-radius: 15px;
+            border: 3px solid #8B4513;
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+        .create-room-btn {
+            background: linear-gradient(145deg, #c9a66b, #a67c52);
+            color: #fff;
+            box-shadow: 0 8px 20px rgba(139,69,19,0.4), inset 0 2px 4px rgba(255,255,255,0.3);
+        }
+        .create-room-btn::before { content: '⚔'; position: absolute; right: 20px; top: 50%; transform: translateY(-50%); font-size: 28px; opacity: 0.5; }
+        .create-room-btn:hover { transform: translateY(-3px); box-shadow: 0 12px 28px rgba(139,69,19,0.5); background: linear-gradient(145deg, #d4af74, #b8895e); }
+        .join-room-btn {
+            background: linear-gradient(145deg, #8fbc8f, #6b8e6b);
+            color: #fff;
+            box-shadow: 0 8px 20px rgba(85,107,47,0.4), inset 0 2px 4px rgba(255,255,255,0.3);
+            border-color: #556b2f;
+        }
+        .join-room-btn::before { content: '🚪'; position: absolute; right: 20px; top: 50%; transform: translateY(-50%); font-size: 28px; opacity: 0.5; }
+        .join-room-btn:hover { transform: translateY(-3px); box-shadow: 0 12px 28px rgba(85,107,47,0.5); background: linear-gradient(145deg, #9acd9a, #7ba87b); }
+        .action-btn:active { transform: translateY(0); }
+
+        /* ===== 大厅页面 ===== */
+        .lobby-topbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            width: 100%;
+            max-width: 520px;
+            margin: 10px auto 0;
+            padding: 0 6px;
+        }
+        .lobby-title {
+            font-family: 'KaiTi', '楷体', serif;
+            font-size: 34px;
+            letter-spacing: 6px;
+            color: #5c3a1e;
+            margin: 0;
+        }
+        .back-btn-inline {
+            background: transparent;
+            color: #8B4513;
+            border: 2px solid #8B4513;
+            width: 44px; height: 44px;
+            border-radius: 50%;
+            font-size: 20px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        .back-btn-inline:hover { background: rgba(139,69,19,0.1); }
+        .plus-btn {
+            background: linear-gradient(145deg, #c9a66b, #a67c52);
+            color: #fff;
+            border: 3px solid #8B4513;
+            width: 52px; height: 52px;
+            border-radius: 50%;
+            font-size: 30px;
+            line-height: 1;
+            cursor: pointer;
+            box-shadow: 0 6px 16px rgba(139,69,19,0.4);
+            transition: all 0.2s ease;
+        }
+        .plus-btn:hover { transform: translateY(-2px) rotate(90deg); box-shadow: 0 10px 22px rgba(139,69,19,0.5); }
+        .lobby-subtitle { font-size: 18px; color: #8B4513; margin: 18px 0 10px; }
+        .room-list {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            width: 100%;
+            max-width: 520px;
+            margin: 0 auto;
+            overflow-y: auto;
+            max-height: 60vh;
+            padding: 4px;
+        }
+        .room-card {
+            background: linear-gradient(160deg, #fffaf0, #f3e2c7);
+            border: 3px solid #c9a66b;
+            border-radius: 14px;
+            padding: 16px 20px;
+            cursor: pointer;
+            text-align: left;
+            transition: all 0.2s ease;
+            box-shadow: 0 4px 12px rgba(139,69,19,0.15);
+        }
+        .room-card:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(139,69,19,0.3); border-color: #a67c52; }
+        .room-card-top {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 8px;
+        }
+        .room-card-id { font-size: 22px; font-weight: bold; color: #5c3a1e; letter-spacing: 2px; }
+        .room-card-lock { font-size: 20px; }
+        .room-card-row { font-size: 16px; color: #6b4a2b; margin: 3px 0; }
+        .room-card-row b { color: #8B4513; }
+        .status-waiting { color: #b8860b; }
+        .status-playing { color: #2e7d32; }
+        .status-finished { color: #888; }
+        .lobby-empty { color: #8B4513; font-size: 18px; margin-top: 40px; }
+
+        /* 执棋选择 */
+        .color-choice { display: flex; gap: 10px; flex-wrap: wrap; }
+        .color-btn {
+            flex: 1;
+            min-width: 90px;
+            padding: 12px 8px;
+            font-size: 18px;
+            font-family: 'KaiTi', '楷体', serif;
+            background: #fffaf0;
+            border: 2px solid #c9a66b;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            color: #5c3a1e;
+        }
+        .color-btn:hover { background: #f3e2c7; }
+        .color-btn.active {
+            background: linear-gradient(145deg, #c9a66b, #a67c52);
+            color: #fff;
+            border-color: #8B4513;
+            box-shadow: 0 4px 10px rgba(139,69,19,0.35);
+        }
+
+        .back-btn {
+            margin-top: 50px;
+            background: transparent;
+            color: #8B4513;
+            border: 2px solid #8B4513;
+            padding: 12px 30px;
+            font-size: 18px;
+            cursor: pointer;
+            border-radius: 8px;
+            transition: all 0.3s ease;
+            letter-spacing: 2px;
+        }
+        .back-btn:hover { background: rgba(139,69,19,0.1); transform: translateX(-5px); }
+
+        /* ===== 模态框 ===== */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            background: rgba(0,0,0,0.6);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+            animation: fadeIn 0.3s ease-in;
+        }
+        .modal-overlay.active { display: flex; }
+        .modal-box {
+            background: linear-gradient(145deg, #faf6f0, #f5e6d3);
+            border-radius: 20px;
+            padding: 40px 50px;
+            box-shadow: 0 15px 40px rgba(139,69,19,0.3), inset 0 2px 4px rgba(255,255,255,0.8);
+            border: 3px solid #c9a66b;
+            width: min(400px, 90vw);
+            max-width: 90vw;
+            position: relative;
+            animation: modalSlideIn 0.4s ease-out;
+        }
+        @keyframes modalSlideIn {
+            from { opacity: 0; transform: translateY(-30px) scale(0.9); }
+            to { opacity: 1; transform: translateY(0) scale(1); }
+        }
+        .modal-title {
+            font-size: 32px;
+            color: #8B4513;
+            font-family: 'KaiTi', '楷体', serif;
+            text-align: center;
+            margin-bottom: 10px;
+            letter-spacing: 5px;
+        }
+        .modal-subtitle {
+            font-size: 16px;
+            color: #a0522d;
+            text-align: center;
+            margin-bottom: 30px;
+            opacity: 0.8;
+        }
+        .input-wrapper { margin-bottom: 30px; position: relative; }
+        .field-label {
+            display: block;
+            font-size: 16px;
+            color: #8B4513;
+            margin-bottom: 8px;
+            letter-spacing: 2px;
+            text-align: left;
+        }
+        .nickname-input {
+            width: 100%;
+            padding: 18px 25px;
+            font-size: 22px;
+            border: 2px solid #c9a66b;
+            border-radius: 12px;
+            background: rgba(255,255,255,0.8);
+            color: #333;
+            outline: none;
+            transition: all 0.3s ease;
+            letter-spacing: 2px;
+            font-family: 'Microsoft YaHei', sans-serif;
+        }
+        .nickname-input:focus {
+            border-color: #8B4513;
+            box-shadow: 0 0 0 3px rgba(201,166,107,0.3), 0 4px 12px rgba(139,69,19,0.15);
+            background: #fff;
+        }
+        .nickname-input::placeholder { color: #bbb; letter-spacing: 1px; }
+        .input-hint { font-size: 13px; color: #999; margin-top: 8px; text-align: center; }
+        .modal-btn-group { display: flex; gap: 15px; justify-content: center; }
+        .modal-btn {
+            padding: 12px 35px;
+            font-size: 20px;
+            font-family: 'KaiTi', '楷体', serif;
+            letter-spacing: 5px;
+            cursor: pointer;
+            border-radius: 10px;
+            border: 2px solid #8B4513;
+            transition: all 0.3s ease;
+            min-width: 120px;
+        }
+        .modal-confirm-btn {
+            background: linear-gradient(145deg, #c9a66b, #a67c52);
+            color: #fff;
+            box-shadow: 0 4px 12px rgba(139,69,19,0.3);
+        }
+        .modal-confirm-btn:hover { background: linear-gradient(145deg, #d4af74, #b8895e); transform: translateY(-2px); }
+        .modal-cancel-btn { background: transparent; color: #8B4513; }
+        .modal-cancel-btn:hover { background: rgba(139,69,19,0.08); transform: translateX(-3px); }
+
+        /* ===== 房间页面 ===== */
+        .room-info-bar {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: center;
+            gap: 16px;
+            width: 100%;
+            max-width: 680px;
+            margin: 0 auto 18px;
+        }
+        .room-header {
+            background: linear-gradient(145deg, #c9a66b, #a67c52);
+            padding: 14px 28px;
+            border-radius: 15px;
+            box-shadow: 0 8px 24px rgba(139,69,19,0.3), inset 0 2px 4px rgba(255,255,255,0.2);
+            display: inline-flex;
+            align-items: center;
+            flex: 0 0 auto;
+        }
+        .room-label { font-size: 22px; color: #fff; font-family: 'KaiTi', '楷体', serif; letter-spacing: 5px; opacity: 0.95; }
+        .room-number {
+            font-size: 28px;
+            color: #fff;
+            font-weight: bold;
+            letter-spacing: 3px;
+            font-family: 'Consolas', 'Courier New', monospace;
+            margin-left: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+            word-break: break-all;
+        }
+        .room-hint { font-size: 13px; color: #8B4513; opacity: 0.85; margin: -8px 0 18px; letter-spacing: 1px; text-align: center; }
+
+        .players-section {
+            background: linear-gradient(145deg, rgba(255,255,255,0.9), rgba(250,246,240,0.9));
+            padding: 16px 26px;
+            border-radius: 20px;
+            box-shadow: 0 6px 20px rgba(139,69,19,0.15), inset 0 2px 4px rgba(255,255,255,0.9);
+            border: 2px solid #e8d4b8;
+            display: inline-block;
+            flex: 0 0 auto;
+        }
+        .players-title { font-size: 20px; color: #8B4513; margin-bottom: 20px; letter-spacing: 3px; font-family: 'KaiTi', '楷体', serif; }
+        .player-slots { display: flex; justify-content: center; gap: 40px; }
+        .player-slot {
+            width: 180px;
+            padding: 20px;
+            border-radius: 15px;
+            text-align: center;
+            position: relative;
+        }
+        .player-slot.black-player { background: linear-gradient(145deg, #f5f5f5, #e8e8e8); border: 3px solid #333; box-shadow: 0 4px 12px rgba(0,0,0,0.2); }
+        .player-slot.white-player { background: linear-gradient(145deg, #ffffff, #f0f0f0); border: 3px solid #ccc; box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
+        .slot-label { font-size: 15px; color: #888; margin-bottom: 12px; letter-spacing: 2px; }
+        .waiting-self {
+            display: flex; flex-direction: column; align-items: center;
+            background: linear-gradient(145deg, #f5f5f5, #e8e8e8);
+            border: 3px solid #333; box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+            border-radius: 15px; padding: 20px 40px; position: relative; margin: 0 auto; max-width: 220px;
+        }
+        .player-avatar { width: 54px; height: 54px; line-height: 54px; font-size: 40px; border-radius: 50%; margin: 0 auto 12px; background: rgba(255,255,255,0.6); box-shadow: 0 4px 8px rgba(0,0,0,0.15); }
+        .player-name { font-size: 18px; color: #333; font-weight: bold; letter-spacing: 2px; min-height: 24px; word-break: break-all; }
+        .player-name.empty { color: #bbb; font-style: italic; font-weight: normal; }
+        .player-badge {
+            position: absolute;
+            top: -8px; right: -8px;
+            background: #ff6b6b;
+            color: #fff;
+            font-size: 11px;
+            padding: 3px 10px;
+            border-radius: 10px;
+            letter-spacing: 1px;
+        }
+
+        /* ===== 棋盘 ===== */
+        .board-section {
+            display: none;
+            margin: 10px auto 25px;
+            background: linear-gradient(145deg, #e8c99a, #d4b483);
+            padding: 20px;
+            border-radius: 15px;
+            box-shadow: 0 8px 24px rgba(139,69,19,0.3), inset 0 2px 4px rgba(255,255,255,0.3);
+            border: 3px solid #c9a66b;
+            display: inline-block;
+            max-width: 100%;
+            box-sizing: border-box;
+        }
+        #board {
+            display: block;
+            background: #f0d9b5;
+            border-radius: 8px;
+            cursor: pointer;
+            touch-action: none;
+            width: 100%;
+            max-width: 620px;
+            height: auto;
+            aspect-ratio: 1 / 1;
+            margin: 0 auto;
+        }
+        .turn-indicator {
+            font-size: 20px;
+            color: #8B4513;
+            margin: 15px 0 5px;
+            letter-spacing: 2px;
+            font-family: 'KaiTi', '楷体', serif;
+            min-height: 28px;
+        }
+        .restart-btn {
+            background: linear-gradient(145deg, #87ceeb, #6bb3d9);
+            color: #fff;
+            border: 2px solid #4682b4;
+            padding: 10px 25px;
+            font-size: 16px;
+            cursor: pointer;
+            border-radius: 10px;
+            letter-spacing: 2px;
+            margin-top: 10px;
+            box-shadow: 0 4px 10px rgba(70,130,180,0.3);
+            transition: all 0.3s ease;
+        }
+        .restart-btn:hover { transform: translateY(-2px); box-shadow: 0 6px 14px rgba(70,130,180,0.4); }
+
+        /* ===== 人机对战：难度选择 + AI 控制 ===== */
+        .ai-controls { display: flex; gap: 12px; justify-content: center; margin-top: 10px; }
+        .difficulty-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 18px 0 6px; }
+        .diff-btn {
+            padding: 14px 8px;
+            font-size: 16px;
+            font-weight: 600;
+            color: #fff;
+            background: linear-gradient(145deg, #ff9a5a, #e8743b);
+            border: 2px solid #cf6a32;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            box-shadow: 0 3px 8px rgba(200,90,40,0.3);
+        }
+        .diff-btn:hover { transform: translateY(-3px); box-shadow: 0 6px 14px rgba(200,90,40,0.45); filter: brightness(1.05); }
+
+        /* ===== 个人信息面板 ===== */
+        .profile-box { max-width: 380px; }
+        .modal-close {
+            position: absolute; top: 10px; right: 14px;
+            border: none; background: transparent; font-size: 26px; line-height: 1;
+            color: #aaa; cursor: pointer;
+        }
+        .modal-close:hover { color: #c44; }
+        .profile-avatar-big {
+            width: 84px; height: 84px; border-radius: 50%;
+            margin: 6px auto 4px;
+            background: #fff; border: 3px solid #c9a66b;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 48px; overflow: hidden;
+            box-shadow: 0 4px 10px rgba(139,69,19,0.2);
+        }
+        .profile-avatar-big img { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; display: block; }
+        .profile-username { text-align: center; font-size: 16px; color: #555; margin: 2px 0 0; word-break: break-all; }
+        .profile-points {
+            text-align: center; font-size: 15px; color: #b8860b; font-weight: 600;
+            margin: 4px 0 14px;
+        }
+        .profile-field { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+        .profile-field label { font-size: 14px; color: #8B4513; white-space: nowrap; }
+        .profile-field .nickname-input { flex: 1; margin: 0; }
+        .profile-section-label { font-size: 13px; color: #999; text-align: center; margin: 10px 0 8px; }
+        .avatar-picker { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; }
+        .avatar-opt {
+            aspect-ratio: 1 / 1; border: 2px solid #e6d3b3; background: #fff;
+            border-radius: 10px; font-size: 22px; cursor: pointer;
+            display: flex; align-items: center; justify-content: center;
+            transition: all 0.15s ease;
+        }
+        .avatar-opt:hover { transform: scale(1.08); border-color: #c9a66b; }
+        .avatar-opt.selected { border-color: #e8743b; background: #fff1e6; box-shadow: 0 0 0 2px rgba(232,116,59,0.4); }
+        .local-file-btn {
+            display: block; text-align: center; margin: 14px auto 4px;
+            padding: 9px 16px; font-size: 14px; color: #fff;
+            background: linear-gradient(145deg, #87ceeb, #6bb3d9);
+            border: 2px solid #4682b4; border-radius: 10px; cursor: pointer;
+            width: fit-content;
+        }
+        .local-file-btn:hover { filter: brightness(1.05); }
+        .modal-ok-btn { background: linear-gradient(145deg, #ff9a5a, #e8743b); color: #fff; border: 2px solid #cf6a32; }
+        .modal-ok-btn:hover { filter: brightness(1.05); transform: translateY(-2px); }
+
+
+        .waiting-text {
+            font-size: 18px;
+            color: #a0522d;
+            margin: 20px 0;
+            animation: pulse 2s infinite;
+            min-height: 24px;
+        }
+        @keyframes pulse { 0%, 100% { opacity: 0.7; } 50% { opacity: 1; } }
+
+        .room-actions { display: flex; gap: 20px; justify-content: center; flex-wrap: wrap; }
+        .room-action-btn {
+            padding: 12px 30px;
+            font-size: 18px;
+            cursor: pointer;
+            border-radius: 10px;
+            border: 2px solid #8B4513;
+            transition: all 0.3s ease;
+            letter-spacing: 2px;
+            font-family: 'Microsoft YaHei', sans-serif;
+        }
+        .copy-room-btn {
+            background: linear-gradient(145deg, #87ceeb, #6bb3d9);
+            color: #fff;
+            border-color: #4682b4;
+            box-shadow: 0 4px 10px rgba(70,130,180,0.3);
+        }
+        .copy-room-btn:hover { transform: translateY(-2px); box-shadow: 0 6px 14px rgba(70,130,180,0.4); }
+        .leave-room-btn { background: transparent; color: #c44; border-color: #c44; }
+        .leave-room-btn:hover { background: rgba(204,68,68,0.08); transform: translateX(-3px); }
+
+        /* ===== 飘屏弹窗 ===== */
+        .toast {
+            position: fixed;
+            top: -100px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: linear-gradient(145deg, #ff6b6b, #ee5a52);
+            color: #fff;
+            padding: 18px 45px;
+            border-radius: 12px;
+            font-size: 20px;
+            letter-spacing: 3px;
+            box-shadow: 0 8px 24px rgba(238,90,82,0.4), inset 0 2px 4px rgba(255,255,255,0.2);
+            z-index: 2000;
+            transition: top 0.5s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+            white-space: nowrap;
+            font-family: 'Microsoft YaHei', sans-serif;
+            animation: toastShake 0.5s ease-in-out;
+        }
+        .toast.show { top: 80px; }
+        @keyframes toastShake {
+            0%, 100% { transform: translateX(-50%) rotate(0deg); }
+            25% { transform: translateX(calc(-50% + 8px)) rotate(-2deg); }
+            75% { transform: translateX(calc(-50% - 8px)) rotate(2deg); }
+        }
+
+        /* ===================================================== */
+        /*  移动端响应式适配（竖屏手机 / 平板）                    */
+        /* ===================================================== */
+        @media (max-width: 768px) {
+            .container { padding: 16px; width: 100%; }
+
+            /* 主页面 */
+            .title-wrapper { margin-bottom: 48px; }
+            .title::before,
+            .title::after { font-size: 32px; }
+            .title::before { left: -44px; }
+            .title::after { right: -44px; }
+            .subtitle { font-size: 18px; margin-bottom: 30px; }
+            .start-btn { padding: 18px 50px; font-size: 26px; letter-spacing: 6px; }
+            .main-btn-group { flex-direction: column; gap: 22px; }
+            .main-btn-group .start-btn { width: min(320px, 82vw); padding: 18px 30px; font-size: 24px; letter-spacing: 4px; }
+            .piece-decoration { gap: 30px; margin-top: 40px; }
+            .piece { width: 32px; height: 32px; }
+
+            /* 准备页 */
+            .prepare-title { font-size: 44px; }
+            .prepare-subtitle { font-size: 18px; margin-bottom: 40px; }
+            .action-btn { width: min(320px, 82vw); padding: 20px 30px; font-size: 24px; letter-spacing: 6px; }
+            .btn-group { gap: 22px; }
+
+            /* 房间页 */
+            .room-info-bar { gap: 12px; margin-bottom: 14px; }
+            .room-header { padding: 14px 22px; max-width: 100%; box-sizing: border-box; }
+            .room-label { font-size: 20px; }
+            .room-number { font-size: 22px; }
+            .room-hint { margin: -4px 0 14px; }
+            .players-section { padding: 16px 14px; max-width: 100%; box-sizing: border-box; }
+            .player-slots { gap: 18px; }
+            .player-slot { width: auto; flex: 1; min-width: 0; padding: 16px 10px; }
+            .player-avatar { width: 46px; height: 46px; line-height: 46px; font-size: 34px; }
+            .player-name { font-size: 16px; }
+            .board-section { padding: 12px; }
+            .turn-indicator { font-size: 18px; }
+
+            /* 模态框 */
+            .modal-box { padding: 30px 24px; }
+            .modal-title { font-size: 28px; }
+            .nickname-input { padding: 14px 18px; font-size: 18px; }
+
+            /* toast 允许换行，避免超宽 */
+            .toast { font-size: 17px; padding: 14px 26px; white-space: normal; max-width: 86vw; text-align: center; }
+        }
+
+        @media (max-width: 400px) {
+            .title { letter-spacing: 6px; }
+            .title::before,
+            .title::after { display: none; }
+            .start-btn { padding: 16px 36px; font-size: 22px; letter-spacing: 4px; }
+            .prepare-title { font-size: 36px; }
+            .action-btn { font-size: 21px; letter-spacing: 4px; }
+            .room-number { font-size: 18px; }
+            .player-slots { gap: 12px; }
+            .modal-btn { padding: 10px 20px; font-size: 18px; letter-spacing: 3px; min-width: 100px; }
+        }
+    </style>
+</head>
+<body>
+    <!-- 龙纹背景SVG -->
+    <svg class="dragon-pattern" viewBox="0 0 800 600" xmlns="http://www.w3.org/2000/svg">
+        <g fill="#8B4513">
+            <path d="M100,300 Q200,200 300,280 T500,260 T700,300 Q650,350 550,330 T350,360 T150,340 Z" />
+            <ellipse cx="700" cy="300" rx="50" ry="35" />
+            <path d="M720,270 Q750,220 770,250 Q755,265 735,275" />
+            <path d="M730,275 Q760,230 780,260 Q765,272 745,280" />
+            <path d="M745,315 Q780,330 790,320" stroke="#8B4513" stroke-width="2" fill="none"/>
+            <path d="M745,325 Q785,345 795,335" stroke="#8B4513" stroke-width="2" fill="none"/>
+            <circle cx="200" cy="310" r="12" />
+            <circle cx="280" cy="295" r="12" />
+            <circle cx="360" cy="280" r="12" />
+            <circle cx="440" cy="275" r="12" />
+            <circle cx="520" cy="290" r="12" />
+            <circle cx="600" cy="305" r="12" />
+            <path d="M180,340 L160,380 M170,345 L155,385 M190,338 L175,375" stroke="#8B4513" stroke-width="3" />
+            <path d="M420,300 L430,340 M425,298 L440,335" stroke="#8B4513" stroke-width="3" />
+            <ellipse cx="120" cy="200" rx="40" ry="25" opacity="0.5"/>
+            <ellipse cx="600" cy="420" rx="50" ry="30" opacity="0.5"/>
+            <ellipse cx="300" cy="450" rx="35" ry="22" opacity="0.5"/>
+        </g>
+    </svg>
+
+    <div class="container">
+        <!-- 登录 / 注册 页面（主界面前置） -->
+        <div id="authPage" class="page active">
+            <div class="auth-card">
+                <h1 class="auth-logo">五子棋</h1>
+                <p class="auth-tagline">登录后即可开始对战</p>
+                <div class="auth-tabs">
+                    <button class="auth-tab active" id="tabLogin" onclick="switchAuthTab('login')">登录</button>
+                    <button class="auth-tab" id="tabRegister" onclick="switchAuthTab('register')">注册</button>
+                </div>
+                <form id="authForm" autocomplete="on">
+                    <div class="auth-field">
+                        <input type="text" id="authUsername" class="auth-input" placeholder="用户名" maxlength="20" autocomplete="username">
+                    </div>
+                    <div class="auth-field">
+                        <input type="password" id="authPassword" class="auth-input" placeholder="密码" maxlength="40" autocomplete="current-password">
+                    </div>
+                    <div class="auth-field" id="authConfirmField" style="display:none;">
+                        <input type="password" id="authConfirm" class="auth-input" placeholder="确认密码" maxlength="40" autocomplete="new-password">
+                    </div>
+                    <button type="button" class="auth-submit" id="authSubmit" onclick="submitAuth()">登录</button>
+                </form>
+                <p class="auth-hint" id="authHint"></p>
+                <p class="auth-mode" id="authModeNote"></p>
+            </div>
+        </div>
+
+        <!-- 主页面 -->
+        <div id="mainPage" class="page">
+            <div class="user-badge" id="userBadge" style="display:none;">
+                <span class="badge-avatar" id="badgeAvatar" onclick="openProfilePanel()" title="查看/修改个人信息"></span>
+                <span class="uname" id="badgeName" onclick="openProfilePanel()" title="查看/修改个人信息"></span>
+                <button class="logout-btn" onclick="doLogout()">退出</button>
+            </div>
+            <div class="title-wrapper">
+                <h1 class="title">五子棋</h1>
+            </div>
+            <p class="subtitle">五子棋 · 棋逢对手</p>
+            <div class="main-btn-group">
+                <button class="start-btn" onclick="eventHumanVsAi()">人机对战</button>
+                <button class="start-btn" onclick="event1_startGame()">联机对战</button>
+            </div>
+            <div class="piece-decoration">
+                <div class="piece black"></div>
+                <div class="piece white"></div>
+            </div>
+        </div>
+
+        <!-- 大厅页面（联机对战新界面） -->
+        <div id="lobbyPage" class="page">
+            <div class="lobby-topbar">
+                <button class="back-btn-inline" onclick="goBack()">←</button>
+                <h2 class="lobby-title">联机对战</h2>
+                <button class="plus-btn" onclick="handleCreateRoom()" title="创建房间">＋</button>
+            </div>
+            <p class="lobby-subtitle">点击下方房间加入，或点击右上角 ＋ 创建房间</p>
+            <div id="roomList" class="room-list"></div>
+            <p class="lobby-empty" id="lobbyEmpty" style="display:none;">暂无房间，点击 ＋ 创建第一个房间吧</p>
+        </div>
+
+        <!-- 房间页面 -->
+        <div id="roomPage" class="page">
+            <!-- 顶部信息栏：房间号 + 玩家头像，统一显示在棋盘上方 -->
+            <div class="room-info-bar" id="roomInfoBar">
+                <div class="room-header">
+                    <span class="room-label">房间</span>
+                    <span id="roomNumber" class="room-number">-----</span>
+                </div>
+
+                <div class="players-section" id="playersSection">
+                    <!-- 仅自己：等待对手时显示头像与昵称 -->
+                    <div class="waiting-self" id="waitingSelf">
+                        <div class="player-avatar" id="selfAvatar">🙂</div>
+                        <div class="player-name" id="selfName">---</div>
+                        <span class="player-badge" id="selfBadge">房主</span>
+                    </div>
+                    <!-- 双方就绪：显示黑白席位（头像 + 昵称） -->
+                    <div class="player-slots" id="playerSlots" style="display:none;">
+                        <div class="player-slot black-player">
+                            <span class="slot-label" id="blackSlotLabel">黑方（先手）</span>
+                            <div class="player-avatar" id="blackAvatar">🙂</div>
+                            <div id="blackPlayerName" class="player-name">---</div>
+                            <span class="player-badge" id="blackBadge" style="display:none;">房主</span>
+                        </div>
+                        <div class="player-slot white-player">
+                            <span class="slot-label" id="whiteSlotLabel">白方</span>
+                            <div class="player-avatar" id="whiteAvatar">🙂</div>
+                            <div id="whitePlayerName" class="player-name empty">等待加入...</div>
+                            <span class="player-badge" id="whiteBadge" style="display:none;">房主</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <p class="room-hint">请将此房间号分享给对手，等待对方加入</p>
+
+            <!-- 棋盘区域（游戏开始后显示） -->
+            <div class="board-section" id="boardSection">
+                <canvas id="board" width="620" height="620"></canvas>
+                <div class="turn-indicator" id="turnIndicator"></div>
+                <button class="restart-btn" id="onlineRestartBtn" onclick="requestRestart()">🔄 重新开始</button>
+                <!-- 人机对战专属控制（联机时隐藏） -->
+                <div class="ai-controls" id="aiControls" style="display:none;">
+                    <button class="restart-btn" onclick="requestRestart()">🔄 重新开始</button>
+                    <button class="restart-btn leave-room-btn" onclick="leaveAiGame()">🚪 返回大厅</button>
+                </div>
+            </div>
+
+            <p class="waiting-text" id="waitingText">⏳ 等待对手加入房间...</p>
+
+            <div class="room-actions">
+                <button class="room-action-btn copy-room-btn" onclick="copyRoomNumber()">📋 复制房间号</button>
+                <button class="room-action-btn leave-room-btn" onclick="leaveRoom()">🚪 离开房间</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 创建房间模态框 -->
+    <div id="createRoomModal" class="modal-overlay">
+        <div class="modal-box">
+            <h3 class="modal-title">创建房间</h3>
+            <p class="modal-subtitle">设置您的昵称与房间信息</p>
+            <div class="input-wrapper">
+                <label class="field-label">昵称：</label>
+                <input type="text" id="createNicknameInput" class="nickname-input" placeholder="请输入昵称..." maxlength="12" autocomplete="off">
+                <p class="input-hint">昵称长度不超过12个字符</p>
+            </div>
+            <div class="input-wrapper">
+                <label class="field-label">房间密码（可选）：</label>
+                <input type="text" id="createPasswordInput" class="nickname-input" placeholder="留空则随机生成房间号" maxlength="16" autocomplete="off">
+                <p class="input-hint">设置后他人需输入此密码才能加入；留空将自动生成</p>
+            </div>
+            <div class="input-wrapper">
+                <label class="field-label">执棋：</label>
+                <div class="color-choice" id="colorChoice">
+                    <button type="button" class="color-btn" data-color="black" onclick="selectHostColor('black')">⚫ 执黑</button>
+                    <button type="button" class="color-btn" data-color="white" onclick="selectHostColor('white')">⚪ 执白</button>
+                    <button type="button" class="color-btn active" data-color="random" onclick="selectHostColor('random')">🎲 随机</button>
+                </div>
+            </div>
+            <div class="modal-btn-group">
+                <button class="modal-btn modal-confirm-btn" onclick="confirmCreateRoom()">创建</button>
+                <button class="modal-btn modal-cancel-btn" onclick="cancelCreateRoom()">取消</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 加入房间模态框 -->
+    <div id="joinRoomModal" class="modal-overlay">
+        <div class="modal-box">
+            <h3 class="modal-title">加入房间</h3>
+            <p class="modal-subtitle">请输入您的信息以加入对局</p>
+            <div class="input-wrapper">
+                <label class="field-label">请输入昵称：</label>
+                <input type="text" id="joinNicknameInput" class="nickname-input" placeholder="请输入昵称..." maxlength="12" autocomplete="off">
+                <p class="input-hint">昵称长度不超过12个字符</p>
+            </div>
+            <div class="input-wrapper">
+                <label class="field-label">请输入房间号：</label>
+                <input type="text" id="roomNumberInput" class="nickname-input" placeholder="请输入房间号或密码..." maxlength="16" autocomplete="off">
+                <p class="input-hint">房间号为 5 位数字，例如 04217</p>
+            </div>
+            <div class="modal-btn-group">
+                <button class="modal-btn modal-confirm-btn" onclick="confirmJoinRoom()">加入</button>
+                <button class="modal-btn modal-cancel-btn" onclick="cancelJoinRoom()">取消</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 人机对战：难度选择模态框 -->
+    <div id="aiDifficultyModal" class="modal-overlay">
+        <div class="modal-box">
+            <h3 class="modal-title">选择 AI 难度</h3>
+            <p class="modal-subtitle">你执 ⚫ 黑方先手，AI 执 ⚪ 白方</p>
+            <div class="difficulty-grid">
+                <button class="diff-btn" onclick="startAiGame(1)">① 入门</button>
+                <button class="diff-btn" onclick="startAiGame(2)">② 新手</button>
+                <button class="diff-btn" onclick="startAiGame(3)">③ 简单</button>
+                <button class="diff-btn" onclick="startAiGame(4)">④ 普通</button>
+                <button class="diff-btn" onclick="startAiGame(5)">⑤ 进阶</button>
+                <button class="diff-btn" onclick="startAiGame(6)">⑥ 熟练</button>
+                <button class="diff-btn" onclick="startAiGame(7)">⑦ 困难</button>
+                <button class="diff-btn" onclick="startAiGame(8)">⑧ 大师</button>
+                <button class="diff-btn" onclick="startAiGame(9)">⑨ 宗师</button>
+            </div>
+            <div class="modal-btn-group">
+                <button class="modal-btn modal-cancel-btn" onclick="cancelAiGame()">取消</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 个人信息面板 -->
+    <div id="profileModal" class="modal-overlay">
+        <div class="modal-box profile-box">
+            <button class="modal-close" onclick="closeProfilePanel()">×</button>
+            <h3 class="modal-title">个人信息</h3>
+            <div class="profile-avatar-big" id="profileAvatarBig"></div>
+            <p class="profile-username" id="profileUsername"></p>
+            <p class="profile-points">积分：<span id="profilePoints">1000</span></p>
+            <div class="profile-field">
+                <label>昵称</label>
+                <input type="text" id="profileNickname" class="nickname-input" maxlength="12" placeholder="输入昵称..." autocomplete="off">
+            </div>
+            <p class="profile-section-label">头像（点击选择，或本地上传）</p>
+            <div class="avatar-picker" id="avatarPicker"></div>
+            <label class="local-file-btn">
+                📁 从本地选择图片
+                <input type="file" id="avatarFileInput" accept="image/*" style="display:none;" onchange="onAvatarFileSelected(event)">
+            </label>
+            <div class="modal-btn-group">
+                <button class="modal-btn modal-cancel-btn" onclick="closeProfilePanel()">取消</button>
+                <button class="modal-btn modal-ok-btn" onclick="saveProfilePanel()">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="toastContainer"></div>
+
+    <!-- mqtt.js：本地内置（国内访问稳定），CDN 仅作兜底 -->
+    <script src="vendor/mqtt.min.js"
+            onerror="this.onerror=null;var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/mqtt@5.10.1/dist/mqtt.min.js';document.head.appendChild(s);"></script>
+    <!-- Supabase SDK 已停用（账号改用公共 MQTT 后端），移除以减少国外 CDN 依赖 -->
+    <script>
+        // =====================================================
+        //  五子棋联机对战 - 公共 MQTT 中转版（默认无需部署）
+        //  前端为静态页面，对局经公共 MQTT broker 转发，打开网页即可联机
+        // =====================================================
+
+        // ===== 全局状态 =====
+        let ws = null;              // WebSocket 中继连接
+        let wsRetryTimer = null;    // 断线重连定时器（防重入）
+        let myRole = null;          // 'host' | 'guest'
+        let currentUser = null;     // 已登录的用户名（来自本地账号系统）
+        let myNickname = null;
+        let myColor = null;         // 1=黑 | 2=白（双方进房后随机分配）
+        let myAvatar = null;        // 本机随机头像（emoji 或本地图片 data URL）
+        let oppAvatar = null;       // 对手头像（emoji）
+        let userProfile = { avatar: null, nickname: null, points: 1000 }; // 个人信息（按用户名存 localStorage）
+        let avatarOf = {};          // { 1: 黑方头像, 2: 白方头像 } 供棋盘绘制使用
+
+        // 连接状态
+        let roomReady = false;       // 双方均已进房、对局已就绪（用于区分“真离开”与“握手重试”）
+
+        let currentRoom = {
+            number: null,
+            hostNickname: null,
+            guestNickname: null,
+            hostAvatar: null,
+            guestAvatar: null
+        };
+
+        // ===== 棋盘状态 =====
+        const BOARD_SIZE = 15;
+        const CELL = 40;
+        const PADDING = 30;
+        let board = [];             // 15x15: 0=空, 1=黑, 2=白
+        let currentPlayer = 1;      // 当前轮到谁落子
+        let gameActive = false;
+        let gameOver = false;
+        let vsAi = false;           // 是否人机对战模式
+        let aiDifficulty = 1;       // 当前 AI 难度（1~9）
+        let aiThinkingTimer = null; // AI 思考延时定时器
+
+        // ===== DOM 引用 =====
+        const canvas = document.getElementById('board');
+        const ctx = canvas.getContext('2d');
+
+        // =====================================================
+        //  联机通信逻辑（公共 MQTT 中转 / 自建 WS 中继）
+        // =====================================================
+
+        // ===== 联机方式配置 =====
+        // 默认使用「公共 MQTT 消息中转（EMQX 公共 broker）」：无需任何账号、无需自行部署，
+        // 打开网页即可联机——这就是「无需自己操作」的方案。
+        // 若日后想自建更私密/更稳的中继，把 relay-server.js 部署后把网址填到 RELAY_URL
+        // （例如 'wss://你的中继地址'），即自动切换为自建 WebSocket 中继。
+        const RELAY_URL = '';                 // 留空=用公共 MQTT；填入=用自建 WS 中继
+        const MQTT_BROKER = 'wss://broker.emqx.io:8084/mqtt'; // EMQX 公共 broker（免费、无需账号）
+        const myId = Math.random().toString(36).slice(2) + Date.now().toString(36); // 本端唯一标识
+
+        // 是否走自建 WebSocket 中继（RELAY_URL 已填）
+        function useWsRelay() { return !!RELAY_URL; }
+
+        function getRelayUrl() {
+            return RELAY_URL || '';
+        }
+
+        // 校验当前联机方式所需的网络组件是否已就绪
+        //  - 自建 WS 中继：使用浏览器原生 WebSocket，无需外部库
+        //  - 公共 MQTT：依赖 mqtt.js，未加载时提示刷新
+        function ensureNetworkLib() {
+            if (useWsRelay()) return true;
+            if (typeof mqtt === 'undefined') {
+                showToast('网络组件未加载，请刷新页面重试');
+                return false;
+            }
+            return true;
+        }
+
+        // 生成五位数字房间号（含前导零，例如 01234）
+        function generateRoomNumber() {
+            return String(Math.floor(Math.random() * 100000)).padStart(5, '0');
+        }
+
+        // 随机头像池（emoji），用于替代原有的黑白棋图案
+        const AVATAR_POOL = ['🐱','🐶','🦊','🐼','🐸','🦁','🐯','🐰','🐨','🐮',
+                             '🐵','🐔','🐧','🦄','🐝','🦋','🐢','🐙','🦖','🤖',
+                             '👦','👧','🧑','👨','👩','👽','🎅','🦸','🧙','🐲'];
+        function randomAvatar(exclude) {
+            let a;
+            do {
+                a = AVATAR_POOL[Math.floor(Math.random() * AVATAR_POOL.length)];
+            } while (exclude && a === exclude && AVATAR_POOL.length > 1);
+            return a;
+        }
+
+        // ===== 联机连接 =====
+        // 单一长连接（WebSocket 或 MQTT），断线后自动重连。比 WebRTC P2P 简单稳定，
+        // 因为不需要 NAT 穿透，默认也不需要自建信令服务器（用公共 MQTT broker）。
+        let netMode = null;        // 'ws' | 'mqtt'
+        let mqttClient = null;     // MQTT 客户端
+        let mqttRetryTimer = null; // 客人进房重试定时器（兼容先连后房的时序）
+
+        // ===== 大厅（房间列表）状态 =====
+        // 默认走公共 MQTT：房主建房时向 `gomoku/lobby/<房间号>` 发布「保留消息」广播房间信息；
+        // 所有进入大厅的客户端订阅 `gomoku/lobby/+` 即可看到当前所有房间（用户名/状态/黑白方）。
+        // 客人点击房间 → 输入密码（若加密）→ 加入。加入仍以「房主实时在线」校验房间是否存在。
+        let lobbyRooms = {};              // 房间号 → 房间广播对象
+        let lobbySubscribed = false;      // 是否已订阅大厅主题
+        let inLobby = false;              // 当前是否处在大厅页
+        let myHostColor = 'random';       // 房主执棋偏好：'black' | 'white' | 'random'
+        let currentHostIsBlack = null;    // 本局房主是否执黑（双方进房后确定）
+
+        // ===== 房间存在性校验（防误加入不存在的房间）=====
+        // 公共 MQTT 没有中心服务器，无法做权威房间表；故以「房主是否实时在线」作为房间是否存在的依据。
+        // 客人加入时发送 join，若房主（实时在线、已订阅该房间主题）在时限内回应 start，则房间存在；
+        // 否则视为「房间不存在」，不可加入。（自建 WS 中继路径由服务器内存表权威判定 room_not_found）
+        let joinWatchdogTimer = null;      // 客人加入后等待房主 start 回应的计时器（超时=房间不存在）
+
+        function connectRelay() {
+            if (useWsRelay()) connectWsRelay();
+            else {
+                if (mqttClient && mqttClient.connected && currentRoom.number) {
+                    // 已连上大厅，只需追加订阅本房间主题并开始对局
+                    mqttClient.subscribe('gomoku/' + currentRoom.number, { qos: 0 }, () => afterRoomConnect());
+                } else {
+                    connectMqtt(); // connectMqtt 在连接成功后订阅大厅+本房间
+                }
+            }
+        }
+
+        // 进入大厅：建立/复用连接并订阅大厅主题
+        function connectLobby() {
+            inLobby = true;
+            if (!ensureNetworkLib()) return;
+            if (useWsRelay()) {
+                if (!ws) connectWsRelay();
+                else ws.send(JSON.stringify({ type: 'subscribe_lobby' }));
+            } else {
+                if (!mqttClient) connectMqtt();
+                else if (!lobbySubscribed) {
+                    mqttClient.subscribe('gomoku/lobby/+', { qos: 0 }, () => { lobbySubscribed = true; });
+                }
+            }
+        }
+
+        // ---------- 自建 WebSocket 中继（RELAY_URL 已填时） ----------
+        function connectWsRelay() {
+            netMode = 'ws';
+            const url = getRelayUrl();
+            // 已连接：仅追加订阅 / 创建或加入
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                if (inLobby && !myRole) ws.send(JSON.stringify({ type: 'subscribe_lobby' }));
+                else if (myRole) ws.send(JSON.stringify(wsCreateJoinPayload()));
+                return;
+            }
+            showToast('正在连接服务器...');
+            ws = new WebSocket(url);
+            ws.onopen = () => {
+                // 始终先订阅大厅，才能看到房间列表
+                ws.send(JSON.stringify({ type: 'subscribe_lobby' }));
+                if (myRole) ws.send(JSON.stringify(wsCreateJoinPayload()));
+            };
+            ws.onmessage = (ev) => {
+                let msg; try { msg = JSON.parse(ev.data); } catch (e) { return; }
+                if (msg.channel === 'lobby') handleServerLobby(msg);
+                else handleServerMsg(msg);
+            };
+            ws.onclose = () => {
+                if (myRole && roomReady) { showToast('连接断开，正在重连...'); scheduleReconnect(); }
+            };
+            ws.onerror = () => { try { ws.close(); } catch (e) {} };
+        }
+
+        // 构造 WS 中继的 create/join 负载（携带执棋偏好与是否加密）
+        function wsCreateJoinPayload() {
+            return {
+                type: myRole === 'host' ? 'create' : 'join',
+                room: currentRoom.number,
+                nickname: myNickname,
+                avatar: myAvatar,
+                hostColorPref: myHostColor,
+                locked: !!currentRoom.locked
+            };
+        }
+
+        // ---------- 公共 MQTT 中继（默认，无需部署） ----------
+        function connectMqtt() {
+            netMode = 'mqtt';
+            if (typeof mqtt === 'undefined') {
+                showToast('网络组件未加载，请刷新页面');
+                return;
+            }
+            showToast('正在连接服务器...');
+            mqttClient = mqtt.connect(MQTT_BROKER, {
+                clientId: 'gomoku_' + myId,
+                reconnectPeriod: 1500,
+                clean: true
+            });
+            mqttClient.on('connect', () => {
+                // 大厅主题常驻订阅（进入大厅即可看到所有房间）
+                mqttClient.subscribe('gomoku/lobby/+', { qos: 0 }, () => { lobbySubscribed = true; });
+                // 若已进入具体房间，订阅房间主题并触发对局逻辑
+                if (currentRoom.number) {
+                    mqttClient.subscribe('gomoku/' + currentRoom.number, { qos: 0 }, () => afterRoomConnect());
+                }
+            });
+            mqttClient.on('message', (t, payload) => {
+                if (t.indexOf('gomoku/lobby/') === 0) { handleLobbyMsg(t, payload); return; }
+                if (currentRoom.number && t === 'gomoku/' + currentRoom.number) {
+                    let msg; try { msg = JSON.parse(payload.toString()); } catch (e) { return; }
+                    handleMqttMsg(msg);
+                }
+            });
+            mqttClient.on('close', () => {
+                if (myRole && roomReady) showToast('连接断开，正在重连...');
+                // MQTT 客户端自带 1.5s 自动重连，无需额外 scheduleReconnect
+            });
+            mqttClient.on('error', () => { /* 忽略，等待自动重连 */ });
+        }
+
+        // 房间主题订阅成功后的对局接入逻辑（房主/客人共用）
+        function afterRoomConnect() {
+            if (myRole === 'host') {
+                showSelfCard(myNickname, myAvatar, '房主');
+                updateWaitingText('⏳ 等待对手加入房间...');
+                // 房主重连后：若对局已就绪，重新下发 start（不重置棋盘）
+                if (roomReady) {
+                    mqttPublish({ type: 'start', hostIsBlack: (myColor === 1),
+                        host: { nickname: myNickname, avatar: myAvatar },
+                        guest: { nickname: currentRoom.guestNickname, avatar: currentRoom.guestAvatar } });
+                }
+            } else {
+                showSelfCard(myNickname, myAvatar, '客人');
+                updateWaitingText('⏳ 正在连接房主...');
+                // 发送 join：若房主实时在线会在时限内回应 start；否则由看门狗判定“房间不存在”
+                mqttPublish({ type: roomReady ? 'rejoin' : 'join', nickname: myNickname, avatar: myAvatar });
+                startGuestRetry();
+                startJoinWatchdog();
+            }
+        }
+
+        function mqttPublish(obj) {
+            if (mqttClient && mqttClient.connected) {
+                mqttClient.publish('gomoku/' + currentRoom.number,
+                    JSON.stringify(Object.assign({ from: myId }, obj)), { qos: 0 });
+            }
+        }
+
+        // 客人未收到 start 前，每 2 秒重发 join/rejoin（兼容先连后房的时序）
+        function startGuestRetry() {
+            if (mqttRetryTimer) return;
+            mqttRetryTimer = setInterval(() => {
+                if (!mqttClient || !mqttClient.connected) return;
+                if (roomReady) { clearInterval(mqttRetryTimer); mqttRetryTimer = null; return; }
+                mqttPublish({ type: roomReady ? 'rejoin' : 'join', nickname: myNickname, avatar: myAvatar });
+            }, 2000);
+        }
+
+        // ===== 房间存在性校验辅助函数（基于房主实时在线）=====
+        // 客人加入后启动看门狗：若房主在时限内未回应 start（即没有实时在线的房主），判定“房间不存在”。
+        function startJoinWatchdog() {
+            if (joinWatchdogTimer) clearTimeout(joinWatchdogTimer);
+            joinWatchdogTimer = setTimeout(() => {
+                if (!roomReady) {
+                    showToast('房间不存在，请确认房间号是否正确');
+                    cleanupRelay();
+                    setTimeout(() => switchPage('lobbyPage'), 1500);
+                }
+            }, 5000);
+        }
+        function clearJoinWatchdog() {
+            if (joinWatchdogTimer) { clearTimeout(joinWatchdogTimer); joinWatchdogTimer = null; }
+        }
+
+        // ===== 大厅（房间列表）逻辑 =====
+        // 房主建房后向 `gomoku/lobby/<房间号>` 发布保留消息；所有人订阅 `gomoku/lobby/+` 收到即渲染。
+        function handleLobbyMsg(topic, payload) {
+            const room = topic.split('/')[2];
+            const txt = payload ? payload.toString() : '';
+            if (!txt) { // 空消息 = 房间已解散/解除登记
+                if (room) { delete lobbyRooms[room]; renderRoomList(); }
+                return;
+            }
+            let data; try { data = JSON.parse(txt); } catch (e) { return; }
+            if (!data || !data.room) return;
+            lobbyRooms[data.room] = data;
+            renderRoomList();
+        }
+
+        // 处理自建 WS 中继下发的房间列表消息
+        function handleServerLobby(msg) {
+            if (msg.type === 'list') {
+                lobbyRooms = {};
+                (msg.rooms || []).forEach(r => { lobbyRooms[r.room] = r; });
+            } else if (msg.type === 'update') {
+                lobbyRooms[msg.room.room] = msg.room;
+            } else if (msg.type === 'remove') {
+                delete lobbyRooms[msg.room];
+            }
+            renderRoomList();
+        }
+
+        function renderRoomList() {
+            const list = document.getElementById('roomList');
+            const empty = document.getElementById('lobbyEmpty');
+            if (!list) return;
+            const rooms = Object.values(lobbyRooms);
+            if (!rooms.length) {
+                list.innerHTML = '';
+                if (empty) empty.style.display = 'block';
+                return;
+            }
+            if (empty) empty.style.display = 'none';
+            list.innerHTML = rooms.map(r => {
+                const statusText = r.status === 'playing' ? '对局中' : r.status === 'finished' ? '已结束' : '等待中';
+                const statusClass = r.status === 'playing' ? 'status-playing' : r.status === 'finished' ? 'status-finished' : 'status-waiting';
+                const colorLine = formatColorLine(r);
+                const idLabel = r.locked ? '🔒 私房' : ('房间 ' + escapeHtml(r.room));
+                const players = (r.players && r.players.length) ? r.players.map(escapeHtml).join('、') : '—';
+                return '<div class="room-card" onclick="openJoinFromCard(\'' + escapeAttr(r.room) + '\', ' + (r.locked ? 'true' : 'false') + ')">' +
+                    '<div class="room-card-top"><span class="room-card-id">' + idLabel + '</span>' +
+                    (r.locked ? '<span class="room-card-lock">🔒</span>' : '') + '</div>' +
+                    '<div class="room-card-row">房主：<b>' + escapeHtml(r.host) + '</b></div>' +
+                    '<div class="room-card-row">状态：<b class="' + statusClass + '">' + statusText + '</b></div>' +
+                    '<div class="room-card-row">' + colorLine + '</div>' +
+                    '<div class="room-card-row">已进入：<b>' + players + '</b></div>' +
+                    '</div>';
+            }).join('');
+        }
+
+        function formatColorLine(r) {
+            if (r.status !== 'waiting' && r.black && r.white) {
+                return '黑白：<b>' + escapeHtml(r.black) + '</b> ⚫ vs ⚪ <b>' + escapeHtml(r.white) + '</b>';
+            }
+            if (r.hostColorPref === 'black') return '执棋：房主执黑 ⚫';
+            if (r.hostColorPref === 'white') return '执棋：房主执白 ⚪';
+            return '执棋：随机分配 🎲';
+        }
+
+        // 房主建房/状态变更时发布房间广播（仅 MQTT 模式；WS 中继由服务器统一广播）
+        function publishRoomState(status) {
+            if (netMode !== 'mqtt' || !mqttClient || !mqttClient.connected || !currentRoom.number) return;
+            if (myRole !== 'host') return;
+            const hostName = currentRoom.hostNickname || myNickname;
+            const black = (currentHostIsBlack === true) ? hostName : (currentHostIsBlack === false ? currentRoom.guestNickname : null);
+            const white = (currentHostIsBlack === false) ? hostName : (currentHostIsBlack === true ? currentRoom.guestNickname : null);
+            const announce = {
+                room: currentRoom.number,
+                locked: !!currentRoom.locked,
+                host: hostName,
+                hostColorPref: myHostColor,
+                status: status,
+                players: currentRoom.guestNickname ? [hostName, currentRoom.guestNickname] : [hostName],
+                black: black || null,
+                white: white || null
+            };
+            mqttClient.publish('gomoku/lobby/' + currentRoom.number,
+                JSON.stringify(announce), { qos: 1, retain: true });
+        }
+
+        // 房主离开时清除房间广播（大厅中该房间消失）
+        function clearAnnounce() {
+            if (netMode === 'mqtt' && mqttClient && currentRoom.number) {
+                try { mqttClient.publish('gomoku/lobby/' + currentRoom.number, '', { qos: 1, retain: true }); } catch (e) {}
+            }
+        }
+
+        function escapeHtml(s) {
+            return String(s == null ? '' : s).replace(/[&<>"']/g, c =>
+                ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+        }
+        function escapeAttr(s) { return escapeHtml(s).replace(/'/g, '\\&#39;'); }
+
+        // 处理公共 MQTT 模式下的消息（房主侧负责随机分配黑白方）
+        function handleMqttMsg(msg) {
+            if (msg.from === myId) return; // 忽略自己发出的消息
+            switch (msg.type) {
+                case 'join':
+                case 'rejoin':
+                    if (myRole === 'host') {
+                        if (!roomReady) {
+                            if (myAvatar === msg.avatar) myAvatar = randomAvatar(msg.avatar);
+                            currentRoom.guestNickname = msg.nickname;
+                            currentRoom.guestAvatar = msg.avatar;
+                            currentRoom.hostAvatar = myAvatar;
+                            // 按房主执棋偏好决定黑白：black/white 固定，random 随机
+                            let hostIsBlack;
+                            if (myHostColor === 'black') hostIsBlack = true;
+                            else if (myHostColor === 'white') hostIsBlack = false;
+                            else hostIsBlack = Math.random() < 0.5;
+                            currentHostIsBlack = hostIsBlack;
+                            myColor = hostIsBlack ? 1 : 2;
+                            assignPlayerNames(hostIsBlack, myNickname, msg.nickname);
+                            startGame();
+                            publishRoomState('playing'); // 更新大厅中本房间的状态/黑白方
+                        }
+                        // 不论首次还是重连，都向客人下发 start（客人收到后不重置棋盘）
+                        mqttPublish({ type: 'start', hostIsBlack: (myColor === 1),
+                            host: { nickname: myNickname, avatar: myAvatar },
+                            guest: { nickname: currentRoom.guestNickname, avatar: currentRoom.guestAvatar } });
+                    }
+                    break;
+                case 'start':
+                    if (myRole === 'guest') {
+                        clearJoinWatchdog(); // 房主已实时回应 → 房间确实存在
+                        currentRoom.hostNickname = msg.host.nickname;
+                        currentRoom.guestNickname = msg.guest.nickname;
+                        currentRoom.hostAvatar = msg.host.avatar;
+                        currentRoom.guestAvatar = msg.guest.avatar;
+                        oppAvatar = msg.host.avatar;
+                        const hostIsBlack = msg.hostIsBlack;
+                        myColor = hostIsBlack ? 2 : 1;
+                        assignPlayerNames(hostIsBlack, msg.host.nickname, msg.guest.nickname);
+                        if (!gameActive) startGame();
+                    }
+                    break;
+                case 'move':
+                    handleRemoteMove(msg.x, msg.y, msg.player);
+                    break;
+                case 'restart':
+                    resetBoard();
+                    showToast('对方发起了重新开始');
+                    break;
+                case 'leave':
+                    handleOpponentLeave();
+                    break;
+            }
+        }
+
+        // 断线后 1.5 秒自动重连（防重入），仅用于自建 WS 中继
+        function scheduleReconnect() {
+            if (wsRetryTimer) return;
+            wsRetryTimer = setTimeout(() => {
+                wsRetryTimer = null;
+                if (myRole) connectRelay();
+            }, 1500);
+        }
+
+        // 处理来自自建 WS 中继服务器的消息
+        function handleServerMsg(msg) {
+            switch (msg.type) {
+                case 'room_not_found':
+                    showToast('房间不存在，请确认房间号是否正确');
+                    cleanupRelay();
+                    setTimeout(() => switchPage('lobbyPage'), 1500);
+                    break;
+
+                case 'joined':
+                    showSelfCard(myNickname, myAvatar, msg.role === 'host' ? '房主' : '客人');
+                    updateWaitingText(msg.role === 'host'
+                        ? '⏳ 等待对手加入房间...'
+                        : '⏳ 正在连接房主...');
+                    break;
+
+                case 'room_full':
+                    showToast('房间已满');
+                    setTimeout(() => switchPage('lobbyPage'), 1500);
+                    break;
+
+                case 'start':
+                    currentRoom.hostNickname = msg.host.nickname;
+                    currentRoom.guestNickname = msg.guest.nickname;
+                    currentRoom.hostAvatar = msg.host.avatar;
+                    currentRoom.guestAvatar = msg.guest.avatar;
+                    oppAvatar = (myRole === 'host') ? msg.guest.avatar : msg.host.avatar;
+                    const hostIsBlack = msg.hostIsBlack;
+                    currentHostIsBlack = hostIsBlack;
+                    myColor = (myRole === 'host') ? (hostIsBlack ? 1 : 2) : (hostIsBlack ? 2 : 1);
+                    assignPlayerNames(hostIsBlack, msg.host.nickname, msg.guest.nickname);
+                    startGame();
+                    break;
+
+                case 'move':
+                    handleRemoteMove(msg.x, msg.y, msg.player);
+                    break;
+
+                case 'restart':
+                    resetBoard();
+                    showToast('对方发起了重新开始');
+                    break;
+
+                case 'opponent_left':
+                    handleOpponentLeave();
+                    break;
+            }
+        }
+
+        /**
+         * 建立房间（房主）
+         */
+        function createRoom(nickname, password, hostColor) {
+            myRole = 'host';
+            myNickname = nickname;
+            myColor = null; // 黑白方待双方进房后按房主偏好分配
+            myAvatar = randomAvatar();
+            myHostColor = hostColor || 'random';
+            // 房间号即「密码」：填了就用所填内容，留空则随机生成 5 位数字
+            const pw = (password && password.trim()) ? password.trim() : '';
+            currentRoom.number = pw || generateRoomNumber();
+            currentRoom.locked = !!pw;
+            currentRoom.hostNickname = nickname;
+            currentRoom.hostAvatar = myAvatar;
+            document.getElementById('roomNumber').textContent = currentRoom.number;
+            switchPage('roomPage');
+            showToast('房间创建成功！' + (currentRoom.locked ? ('密码: ' + currentRoom.number) : ('房间号: ' + currentRoom.number)));
+            connectRelay();               // 复用「创建房间」交互：接入连接并订阅房间主题
+            publishRoomState('waiting');  // 向大厅广播该房间
+        }
+
+        /**
+         * 加入房间（客人）——从大厅点击房间卡片触发
+         */
+        function joinRoom(nickname, roomId) {
+            myRole = 'guest';
+            myNickname = nickname;
+            myColor = null; // 黑白方待进房后由房主分配
+            myAvatar = randomAvatar();
+            currentRoom.number = roomId;
+            switchPage('roomPage');
+            document.getElementById('roomNumber').textContent = roomId;
+            connectRelay();
+        }
+
+        // 注：连接监听已内联在 connectRelay() 的 ws.onmessage 中，无需单独 setupConnection
+
+        /**
+         * 根据随机结果把昵称填入黑/白两个席位
+         * @param {boolean} hostIsBlack 房主是否为黑方
+         * @param {string} hostName 房主昵称
+         * @param {string} guestName 客人昵称
+         */
+        // 等待对手时，仅展示本机玩家的头像与昵称
+        function showSelfCard(name, avatar, roleText) {
+            document.getElementById('selfName').textContent = name;
+            renderAvatarEl(document.getElementById('selfAvatar'), avatar);
+            document.getElementById('selfBadge').textContent = roleText;
+            document.getElementById('waitingSelf').style.display = 'flex';
+            document.getElementById('playerSlots').style.display = 'none';
+        }
+
+        function assignPlayerNames(hostIsBlack, hostName, guestName) {
+            const blackName = hostIsBlack ? hostName : guestName;
+            const whiteName = hostIsBlack ? guestName : hostName;
+            const blackAvatar = hostIsBlack ? currentRoom.hostAvatar : currentRoom.guestAvatar;
+            const whiteAvatar = hostIsBlack ? currentRoom.guestAvatar : currentRoom.hostAvatar;
+            document.getElementById('blackPlayerName').textContent = blackName;
+            document.getElementById('whitePlayerName').textContent = whiteName;
+            document.getElementById('blackPlayerName').classList.remove('empty');
+            document.getElementById('whitePlayerName').classList.remove('empty');
+            document.getElementById('blackAvatar').textContent = '';
+            renderAvatarEl(document.getElementById('blackAvatar'), blackAvatar);
+            document.getElementById('whiteAvatar').textContent = '';
+            renderAvatarEl(document.getElementById('whiteAvatar'), whiteAvatar);
+            avatarOf[1] = blackAvatar;
+            avatarOf[2] = whiteAvatar;
+            // 房主徽标跟随其所在席位（随机后可能在白方）
+            document.getElementById('blackBadge').style.display = hostIsBlack ? 'block' : 'none';
+            document.getElementById('whiteBadge').style.display = hostIsBlack ? 'none' : 'block';
+            // 双方就绪：隐藏“仅自己”卡片，显示黑白席位
+            document.getElementById('waitingSelf').style.display = 'none';
+            document.getElementById('playerSlots').style.display = 'flex';
+            roomReady = true; // 双方均已进房，后续断开视为“真离开”
+        }
+
+        // 注：对手消息处理已改为 handleServerMsg()（中继服务器转发），见上方 connectRelay 区块
+
+        /**
+         * 发送数据给对手（经中继服务器转发）
+         */
+        function sendData(data) {
+            if (netMode === 'ws') {
+                if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(data));
+            } else if (netMode === 'mqtt') {
+                mqttPublish(data);
+            }
+        }
+
+        /**
+         * 对手离开处理
+         */
+        function handleOpponentLeave() {
+            // 对局尚未真正开始：可能只是握手阶段抖动，房主回到等待状态而非被踢出
+            if (!roomReady) {
+                showToast('对手连接中断，等待重新连接...');
+                updateWaitingText('⏳ 等待对手加入房间...');
+                showSelfCard(myNickname, myAvatar, '房主');
+                return;
+            }
+            gameActive = false;
+            gameOver = true;
+            showToast('对手离开了房间');
+            updateWaitingText('对手已离开');
+            setTimeout(() => {
+                cleanupRelay();
+                goBack();
+            }, 2000);
+        }
+
+        /**
+         * 清理中继连接
+         */
+        function cleanupRelay() {
+            if (wsRetryTimer) { clearTimeout(wsRetryTimer); wsRetryTimer = null; }
+            if (mqttRetryTimer) { clearInterval(mqttRetryTimer); mqttRetryTimer = null; }
+            if (ws) {
+                try { ws.close(); } catch (e) {}
+                ws = null;
+            }
+            if (mqttClient) {
+                // 房主离开即“房间解散”：先清除大厅中的房间广播（解除登记），再通知对手
+                if (myRole === 'host') clearAnnounce();
+                // 优雅离开：先通知对手（房主离开即“房间解散”），再断开
+                try {
+                    mqttClient.publish('gomoku/' + currentRoom.number,
+                        JSON.stringify(Object.assign({ from: myId }, { type: 'leave' })), { qos: 0 });
+                } catch (e) {}
+                clearJoinWatchdog();
+                try { mqttClient.end(false); } catch (e) {} // 优雅断开，确保上面的消息已发出
+                mqttClient = null;
+            }
+            lobbySubscribed = false;
+            netMode = null;
+            roomReady = false;
+        }
+
+        // =====================================================
+        //  游戏逻辑（棋盘）
+        // =====================================================
+
+        /**
+         * 初始化棋盘数据
+         */
+        function initBoard() {
+            board = Array.from({ length: BOARD_SIZE }, () => Array(BOARD_SIZE).fill(0));
+            currentPlayer = 1; // 黑方先手
+            gameActive = true;
+            gameOver = false;
+        }
+
+        /**
+         * 开始游戏（双方就绪）
+         */
+        function startGame() {
+            initBoard();
+            document.getElementById('boardSection').style.display = 'inline-block';
+            drawBoard();
+            updateWaitingText('');
+            updateTurnIndicator();
+            showToast('对局开始！黑方先手');
+            if (myRole === 'host') publishRoomState('playing'); // 同步大厅状态
+        }
+
+        /**
+         * 本地落子（玩家点击）
+         */
+        function placePiece(x, y) {
+            if (!gameActive || gameOver) return;
+            if (board[y][x] !== 0) return;
+            if (currentPlayer !== myColor) {
+                showToast('还没轮到你');
+                return;
+            }
+
+            board[y][x] = currentPlayer;
+            drawBoard();
+
+            // 发送给对手（人机模式不发送）
+            if (!vsAi) sendData({ type: 'move', x, y, player: currentPlayer });
+
+            // 胜负判定
+            if (checkWin(x, y, currentPlayer)) {
+                gameOver = true;
+                gameActive = false;
+                updateTurnIndicator();
+                showToast(currentPlayer === myColor ? '🎉 你赢了！' : '你输了');
+                if (!vsAi && myRole === 'host') publishRoomState('finished'); // 同步大厅状态
+                return;
+            }
+
+            // 切换回合
+            currentPlayer = currentPlayer === 1 ? 2 : 1;
+            updateTurnIndicator();
+
+            // 人机模式：轮到 AI（白方）落子
+            if (vsAi && currentPlayer === 2) {
+                scheduleAiMove();
+            }
+        }
+
+        /**
+         * 处理远程落子
+         */
+        function handleRemoteMove(x, y, player) {
+            board[y][x] = player;
+            drawBoard();
+
+            if (checkWin(x, y, player)) {
+                gameOver = true;
+                gameActive = false;
+                updateTurnIndicator();
+                showToast(player === myColor ? '🎉 你赢了！' : '对手获胜');
+                if (myRole === 'host') publishRoomState('finished'); // 同步大厅状态
+                return;
+            }
+
+            currentPlayer = player === 1 ? 2 : 1;
+            updateTurnIndicator();
+        }
+
+        /**
+         * 重新开始（请求对方）
+         */
+        function requestRestart() {
+            if (vsAi) {
+                if (aiThinkingTimer) { clearTimeout(aiThinkingTimer); aiThinkingTimer = null; }
+                resetBoard();
+                showToast('已重新开始');
+                return;
+            }
+            if (!ws || ws.readyState !== WebSocket.OPEN) return;
+            resetBoard();
+            sendData({ type: 'restart' });
+            showToast('已重新开始');
+        }
+
+        function resetBoard() {
+            initBoard();
+            drawBoard();
+            updateTurnIndicator();
+        }
+
+        /**
+         * 胜负判定：检查 (x,y) 落子后是否形成五连
+         */
+        function checkWin(x, y, player) {
+            const directions = [[1, 0], [0, 1], [1, 1], [1, -1]];
+            for (const [dx, dy] of directions) {
+                let count = 1;
+                // 正向
+                for (let i = 1; i < 5; i++) {
+                    const nx = x + dx * i, ny = y + dy * i;
+                    if (nx < 0 || nx >= BOARD_SIZE || ny < 0 || ny >= BOARD_SIZE) break;
+                    if (board[ny][nx] === player) count++;
+                    else break;
+                }
+                // 反向
+                for (let i = 1; i < 5; i++) {
+                    const nx = x - dx * i, ny = y - dy * i;
+                    if (nx < 0 || nx >= BOARD_SIZE || ny < 0 || ny >= BOARD_SIZE) break;
+                    if (board[ny][nx] === player) count++;
+                    else break;
+                }
+                if (count >= 5) return true;
+            }
+            return false;
+        }
+
+        /**
+         * 绘制棋盘
+         */
+        function drawBoard() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // 背景
+            ctx.fillStyle = '#f0d9b5';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // 网格线
+            ctx.strokeStyle = '#8B4513';
+            ctx.lineWidth = 1.5;
+            for (let i = 0; i < BOARD_SIZE; i++) {
+                // 横线
+                ctx.beginPath();
+                ctx.moveTo(PADDING, PADDING + i * CELL);
+                ctx.lineTo(PADDING + (BOARD_SIZE - 1) * CELL, PADDING + i * CELL);
+                ctx.stroke();
+                // 竖线
+                ctx.beginPath();
+                ctx.moveTo(PADDING + i * CELL, PADDING);
+                ctx.lineTo(PADDING + i * CELL, PADDING + (BOARD_SIZE - 1) * CELL);
+                ctx.stroke();
+            }
+
+            // 星位（天元及四角）
+            const stars = [[3,3],[11,3],[3,11],[11,11],[7,7]];
+            ctx.fillStyle = '#8B4513';
+            for (const [sx, sy] of stars) {
+                ctx.beginPath();
+                ctx.arc(PADDING + sx * CELL, PADDING + sy * CELL, 4, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            // 棋子
+            for (let y = 0; y < BOARD_SIZE; y++) {
+                for (let x = 0; x < BOARD_SIZE; x++) {
+                    if (board[y][x] !== 0) {
+                        drawPiece(x, y, board[y][x]);
+                    }
+                }
+            }
+        }
+
+        /**
+         * 绘制单颗棋子（用玩家头像替代黑白棋图案）
+         */
+        function drawPiece(x, y, color) {
+            const cx = PADDING + x * CELL;
+            const cy = PADDING + y * CELL;
+            const r = CELL / 2 - 3;
+
+            // 浅色底盘，保证头像在木纹棋盘上清晰可见
+            ctx.beginPath();
+            ctx.arc(cx, cy, r, 0, Math.PI * 2);
+            ctx.fillStyle = 'rgba(255,255,255,0.85)';
+            ctx.fill();
+            ctx.strokeStyle = '#b9885a';
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+
+            // 头像：emoji 直接绘制；本地上传图片（data: URL）用纯色棋子代替文字绘制
+            const a = avatarOf[color] || '⚫';
+            if (typeof a === 'string' && a.indexOf('data:') === 0) {
+                ctx.beginPath();
+                ctx.arc(cx, cy, r - 2, 0, Math.PI * 2);
+                ctx.fillStyle = (color === 1) ? '#1a1a1a' : '#f3f3f3';
+                ctx.fill();
+                ctx.strokeStyle = '#444';
+                ctx.lineWidth = 1.5;
+                ctx.stroke();
+            } else {
+                ctx.font = Math.round(r * 1.5) + 'px serif';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(a, cx, cy + 1);
+            }
+        }
+
+        /**
+         * 画布点击事件 → 落子
+         */
+        canvas.addEventListener('click', (e) => {
+            if (!gameActive || gameOver) return;
+            const rect = canvas.getBoundingClientRect();
+            const scaleX = canvas.width / rect.width;
+            const scaleY = canvas.height / rect.height;
+            const mx = (e.clientX - rect.left) * scaleX;
+            const my = (e.clientY - rect.top) * scaleY;
+            const x = Math.round((mx - PADDING) / CELL);
+            const y = Math.round((my - PADDING) / CELL);
+            if (x >= 0 && x < BOARD_SIZE && y >= 0 && y < BOARD_SIZE) {
+                placePiece(x, y);
+            }
+        });
+
+        /**
+         * 更新轮次提示
+         */
+        function updateTurnIndicator() {
+            const indicator = document.getElementById('turnIndicator');
+            if (gameOver) {
+                indicator.textContent = '对局结束';
+                indicator.style.color = '#a0522d';
+                return;
+            }
+            if (vsAi) {
+                if (currentPlayer === 1) {
+                    indicator.textContent = '● 轮到你落子（黑方）';
+                    indicator.style.color = '#2e7d32';
+                } else {
+                    indicator.textContent = '○ AI 思考中（白方）...';
+                    indicator.style.color = '#a0522d';
+                }
+                return;
+            }
+            if (currentPlayer === myColor) {
+                indicator.textContent = '● 轮到你落子（' + (myColor === 1 ? '黑' : '白') + '）';
+                indicator.style.color = '#2e7d32';
+            } else {
+                indicator.textContent = '○ 等待对手落子（' + (myColor === 1 ? '白' : '黑') + '）';
+                indicator.style.color = '#a0522d';
+            }
+        }
+
+        // =====================================================
+        //  人机对战 AI 引擎
+        //  玩家默认执黑先手(1)，AI 执白(2)；共 9 个难度等级。
+        //  思路：单点棋型评分(进攻+防御) + 贪心 / alpha-beta 搜索 + 随机失误。
+        // =====================================================
+        const WIN = 1e9;
+        const AI_LEVELS = {
+            1: { name: '入门', depth: 0, mistake: 1.0,  topK: 1 },
+            2: { name: '新手', depth: 0, mistake: 0.55, topK: 8 },
+            3: { name: '简单', depth: 0, mistake: 0.30, topK: 6 },
+            4: { name: '普通', depth: 0, mistake: 0.0,  topK: 1 },
+            5: { name: '进阶', depth: 2, candidates: 12, time: 500 },
+            6: { name: '熟练', depth: 3, candidates: 12, time: 700 },
+            7: { name: '困难', depth: 4, candidates: 12, time: 900 },
+            8: { name: '大师', depth: 5, candidates: 14, time: 1100 },
+            9: { name: '宗师', depth: 6, candidates: 14, time: 1300 }
+        };
+
+        function inBounds(x, y) { return x >= 0 && x < BOARD_SIZE && y >= 0 && y < BOARD_SIZE; }
+
+        // 在 (x,y) 落 color 后是否形成五连（基于给定棋盘 b）
+        function isWin(b, x, y, color) {
+            const dirs = [[1,0],[0,1],[1,1],[1,-1]];
+            for (const [dx,dy] of dirs) {
+                let count = 1;
+                for (let i=1;i<5;i++){ const nx=x+dx*i, ny=y+dy*i; if(!inBounds(nx,ny)||b[ny][nx]!==color) break; count++; }
+                for (let i=1;i<5;i++){ const nx=x-dx*i, ny=y-dy*i; if(!inBounds(nx,ny)||b[ny][nx]!==color) break; count++; }
+                if (count>=5) return true;
+            }
+            return false;
+        }
+
+        // 单点落子的棋型分值（根据连子数与开放端）
+        function lineScoreOf(count, openEnds) {
+            if (count >= 5) return 1000000;
+            if (count === 4) {
+                if (openEnds === 2) return 100000;
+                if (openEnds === 1) return 10000;
+                return 0;
+            }
+            if (count === 3) {
+                if (openEnds === 2) return 1000;
+                if (openEnds === 1) return 100;
+                return 0;
+            }
+            if (count === 2) {
+                if (openEnds === 2) return 100;
+                if (openEnds === 1) return 10;
+                return 0;
+            }
+            if (count === 1) {
+                if (openEnds === 2) return 10;
+                return 1;
+            }
+            return 0;
+        }
+
+        // 评估把 color 落在 (x,y) 后，该点在四个方向上的棋型总分
+        function evalAround(b, x, y, color) {
+            if (b[y][x] !== 0) return 0;
+            let total = 0;
+            const dirs = [[1,0],[0,1],[1,1],[1,-1]];
+            for (const [dx,dy] of dirs) {
+                let count = 1, openEnds = 0;
+                let i = 1;
+                while (true) {
+                    const nx = x+dx*i, ny = y+dy*i;
+                    if (!inBounds(nx,ny)) break;
+                    if (b[ny][nx] === color) { count++; i++; }
+                    else if (b[ny][nx] === 0) { openEnds++; break; }
+                    else break;
+                }
+                i = 1;
+                while (true) {
+                    const nx = x-dx*i, ny = y-dy*i;
+                    if (!inBounds(nx,ny)) break;
+                    if (b[ny][nx] === color) { count++; i++; }
+                    else if (b[ny][nx] === 0) { openEnds++; break; }
+                    else break;
+                }
+                total += lineScoreOf(count, openEnds);
+            }
+            return total;
+        }
+
+        // 收集候选落子点：已有棋子周围 2 格内的空点，按启发式排序取前 maxN
+        function getCandidates(b, mover, maxN) {
+            let hasStone = false;
+            for (let y=0;y<BOARD_SIZE;y++) for (let x=0;x<BOARD_SIZE;x++) if (b[y][x]!==0) { hasStone = true; }
+            if (!hasStone) return [{ x: 7, y: 7 }];
+            const opp = mover === 1 ? 2 : 1;
+            const seen = new Set();
+            const cells = [];
+            for (let y=0;y<BOARD_SIZE;y++) for (let x=0;x<BOARD_SIZE;x++) {
+                if (b[y][x] !== 0) {
+                    for (let dy=-2;dy<=2;dy++) for (let dx=-2;dx<=2;dx++) {
+                        const nx = x+dx, ny = y+dy;
+                        if (inBounds(nx,ny) && b[ny][nx] === 0) {
+                            const key = ny*BOARD_SIZE + nx;
+                            if (!seen.has(key)) { seen.add(key); cells.push({ x: nx, y: ny }); }
+                        }
+                    }
+                }
+            }
+            for (const c of cells) c.s = evalAround(b, c.x, c.y, mover) + evalAround(b, c.x, c.y, opp) * 0.95;
+            cells.sort((a,b) => b.s - a.s);
+            return cells.slice(0, Math.min(maxN, cells.length));
+        }
+
+        // 全盘静态评估：按棋型（五连/活四/冲四/活三/眠三/活二）给分，自己减对手
+        // 一条线上的评分（line: 0=空 1=me 2=other；边缘当作阻挡）
+        function lineScoreForColor(line, me) {
+            const arr = [2].concat(line.map(v => v === me ? 1 : (v === 0 ? 0 : 2))).concat([2]);
+            const L = arr.length;
+            let score = 0;
+            // 5 连窗
+            for (let i = 0; i <= L - 5; i++) {
+                const w = arr.slice(i, i + 5);
+                if (w.indexOf(2) !== -1) continue;                 // 含对方子，本窗无意义
+                const k = w[0] + w[1] + w[2] + w[3] + w[4];        // me 数量
+                if (k === 5) score += 10000000;
+                else if (k === 4) score += 100000;                // 冲四
+                else if (k === 3) score += 1000;                  // 眠三
+                else if (k === 2) score += 100;
+                else if (k === 1) score += 10;
+            }
+            // 6 连窗：活四 / 活三（两端可延伸成四）
+            for (let i = 0; i <= L - 6; i++) {
+                const w = arr.slice(i, i + 6);
+                if (w.indexOf(2) !== -1) continue;
+                const k = w[0] + w[1] + w[2] + w[3] + w[4] + w[5];
+                const s6 = w.join('');
+                if (k === 4) score += 1000000;                     // 活四（必杀，仅差一步成五）
+                else if (k === 3) {
+                    if (s6 === '011100' || s6 === '001110' ||
+                        s6 === '011010' || s6 === '010110') score += 10000;  // 活三
+                }
+            }
+            return score;
+        }
+        function scanScore(b, color) {
+            let total = 0;
+            // 行
+            for (let y = 0; y < BOARD_SIZE; y++) total += lineScoreForColor(b[y], color);
+            // 列
+            for (let x = 0; x < BOARD_SIZE; x++) {
+                const col = [];
+                for (let y = 0; y < BOARD_SIZE; y++) col.push(b[y][x]);
+                total += lineScoreForColor(col, color);
+            }
+            // 主对角线 (\)
+            for (let d = -(BOARD_SIZE - 1); d <= BOARD_SIZE - 1; d++) {
+                const line = [];
+                for (let y = 0; y < BOARD_SIZE; y++) { const x = y - d; if (x >= 0 && x < BOARD_SIZE) line.push(b[y][x]); }
+                if (line.length >= 5) total += lineScoreForColor(line, color);
+            }
+            // 副对角线 (/)
+            for (let d = 0; d <= 2 * (BOARD_SIZE - 1); d++) {
+                const line = [];
+                for (let y = 0; y < BOARD_SIZE; y++) { const x = d - y; if (x >= 0 && x < BOARD_SIZE) line.push(b[y][x]); }
+                if (line.length >= 5) total += lineScoreForColor(line, color);
+            }
+            return total;
+        }
+        function boardScore(b, aiColor, oppColor) { return scanScore(b, aiColor) - scanScore(b, oppColor); }
+
+        // 找到能一步制胜的落子点（针对 color）
+        function findImmediateWin(b, color) {
+            for (let y=0;y<BOARD_SIZE;y++) for (let x=0;x<BOARD_SIZE;x++) {
+                if (b[y][x] !== 0) continue;
+                b[y][x] = color;
+                const win = isWin(b, x, y, color);
+                b[y][x] = 0;
+                if (win) return { x, y };
+            }
+            return null;
+        }
+
+        // 纯随机落子（仅“入门”难度使用）
+        function randomMove(b) {
+            const cells = [];
+            for (let y=0;y<BOARD_SIZE;y++) for (let x=0;x<BOARD_SIZE;x++) if (b[y][x] === 0) cells.push({ x, y });
+            if (cells.length === 0) return null;
+            return cells[Math.floor(Math.random() * cells.length)];
+        }
+
+        // 贪心：按单点启发式选最优（含随机失误与并列随机）
+        function greedyMove(b, aiColor, oppColor, cfg) {
+            const cands = getCandidates(b, aiColor, 30);
+            if (cands.length === 0) return null;
+            if (Math.random() < cfg.mistake) return cands[Math.floor(Math.random() * cands.length)];
+            const scored = cands.map(m => ({ x: m.x, y: m.y, s: evalAround(b, m.x, m.y, aiColor) + evalAround(b, m.x, m.y, oppColor) * 0.95 }));
+            scored.sort((a,b) => b.s - a.s);
+            const K = cfg.topK || 1;
+            const top = scored.slice(0, Math.min(K, scored.length));
+            return top[Math.floor(Math.random() * top.length)];
+        }
+
+        // 单点启发式（用于候选排序，提升 alpha-beta 剪枝效率）
+        function pointHeuristic(b, x, y, mover) {
+            const opp = mover === 1 ? 2 : 1;
+            return evalAround(b, x, y, mover) + evalAround(b, x, y, opp) * 0.9;
+        }
+
+        // 带 alpha-beta 剪枝 + 时间上限的极小化极大搜索
+        function minimax(b, depth, alpha, beta, maximizing, aiColor, oppColor, deadline) {
+            if (depth <= 0) return boardScore(b, aiColor, oppColor);
+            const mover = maximizing ? aiColor : oppColor;
+            const candN = depth >= 4 ? 10 : 14;
+            const cands = getCandidates(b, mover, candN);
+            if (cands.length === 0) return 0;
+            cands.sort((a, bb) => pointHeuristic(b, bb.x, bb.y, mover) - pointHeuristic(b, a.x, a.y, mover));
+            if (maximizing) {
+                let val = -Infinity;
+                for (const m of cands) {
+                    if (Date.now() > deadline) return val;
+                    b[m.y][m.x] = aiColor;
+                    let v;
+                    if (isWin(b, m.x, m.y, aiColor)) v = WIN + depth;
+                    else v = minimax(b, depth - 1, alpha, beta, false, aiColor, oppColor, deadline);
+                    b[m.y][m.x] = 0;
+                    if (v > val) val = v;
+                    if (val > alpha) alpha = val;
+                    if (alpha >= beta) break;
+                }
+                return val;
+            } else {
+                let val = Infinity;
+                for (const m of cands) {
+                    if (Date.now() > deadline) return val;
+                    b[m.y][m.x] = oppColor;
+                    let v;
+                    if (isWin(b, m.x, m.y, oppColor)) v = -WIN - depth;
+                    else v = minimax(b, depth - 1, alpha, beta, true, aiColor, oppColor, deadline);
+                    b[m.y][m.x] = 0;
+                    if (v < val) val = v;
+                    if (val < beta) beta = val;
+                    if (alpha >= beta) break;
+                }
+                return val;
+            }
+        }
+
+        // 迭代加深搜索：逐层搜索，超时即返回上一层结果，保证不卡顿
+        function searchMove(b, aiColor, oppColor, maxDepth, candN, timeBudgetMs) {
+            const win = findImmediateWin(b, aiColor);
+            if (win) return win;
+            const deadline = Date.now() + (timeBudgetMs || 1000);
+            const rootCands = getCandidates(b, aiColor, candN);
+            if (rootCands.length === 0) return null;
+            rootCands.sort((a, bb) => pointHeuristic(b, bb.x, bb.y, aiColor) - pointHeuristic(b, a.x, a.y, aiColor));
+            let best = rootCands[0];
+            for (let d = 1; d <= maxDepth; d++) {
+                let bestVal = -Infinity, bestMove = best;
+                for (const m of rootCands) {
+                    if (Date.now() > deadline) break;
+                    b[m.y][m.x] = aiColor;
+                    let v;
+                    if (isWin(b, m.x, m.y, aiColor)) v = WIN + (maxDepth - d);
+                    else v = minimax(b, d - 1, -Infinity, Infinity, false, aiColor, oppColor, deadline);
+                    b[m.y][m.x] = 0;
+                    if (v > bestVal) { bestVal = v; bestMove = m; }
+                }
+                best = bestMove;
+                if (bestVal >= WIN) break;            // 已找到必胜手
+                if (Date.now() > deadline) break;    // 超时，用上一层结果
+            }
+            return best;
+        }
+
+        // 主入口：根据难度计算 AI（执白=2）的落子
+        function computeAiMove(b, aiColor, difficulty) {
+            const oppColor = aiColor === 1 ? 2 : 1;
+            if (difficulty === 1) return randomMove(b);                 // 入门：纯随机
+            const win = findImmediateWin(b, aiColor);
+            if (win) return win;                                        // 任何难度都抓住必胜手
+            const cfg = AI_LEVELS[difficulty];
+            if (difficulty >= 3) {
+                const block = findImmediateWin(b, oppColor);
+                if (block) return block;                                // 简单及以上：必拦截对手必胜
+            } else if (difficulty === 2) {
+                const block = findImmediateWin(b, oppColor);
+                if (block && Math.random() < 0.6) return block;         // 新手：60% 拦截
+            }
+            if (cfg.depth <= 0) return greedyMove(b, aiColor, oppColor, cfg);
+            return searchMove(b, aiColor, oppColor, cfg.depth, cfg.candidates, cfg.time || 1000);
+        }
+
+        function isBoardFull(b) {
+            for (let y=0;y<BOARD_SIZE;y++) for (let x=0;x<BOARD_SIZE;x++) if (b[y][x] === 0) return false;
+            return true;
+        }
+
+        // AI 落子（带“思考”延时，避免瞬时落子突兀）
+        function scheduleAiMove() {
+            updateTurnIndicator();
+            if (aiThinkingTimer) clearTimeout(aiThinkingTimer);
+            aiThinkingTimer = setTimeout(() => {
+                aiThinkingTimer = null;
+                const mv = computeAiMove(board, 2, aiDifficulty);
+                if (!mv) {
+                    if (isBoardFull(board)) {
+                        gameOver = true; gameActive = false;
+                        updateTurnIndicator();
+                        showToast('🤝 平局！');
+                    }
+                    return;
+                }
+                board[mv.y][mv.x] = 2;
+                drawBoard();
+                if (checkWin(mv.x, mv.y, 2)) {
+                    gameOver = true; gameActive = false;
+                    updateTurnIndicator();
+                    showToast('🤖 AI（' + AI_LEVELS[aiDifficulty].name + '）获胜');
+                    return;
+                }
+                currentPlayer = 1;
+                updateTurnIndicator();
+            }, 350 + Math.random() * 250);
+        }
+
+        // 开始人机对局（玩家执黑先手）
+        function startAiGame(difficulty) {
+            document.getElementById('aiDifficultyModal').classList.remove('active');
+            vsAi = true;
+            aiDifficulty = difficulty;
+            myRole = null;
+            netMode = null;
+            myColor = 1;                                  // 玩家执黑
+            myNickname = currentUser || '玩家';
+            myAvatar = '😀';
+            const aiName = 'AI · ' + AI_LEVELS[difficulty].name;
+            const aiAvatar = '🤖';
+            switchPage('roomPage');
+            // 显示双方席位
+            document.getElementById('waitingSelf').style.display = 'none';
+            document.getElementById('playerSlots').style.display = 'flex';
+            document.getElementById('blackPlayerName').textContent = myNickname;
+            renderAvatarEl(document.getElementById('blackAvatar'), myAvatar);
+            document.getElementById('blackBadge').style.display = 'none';
+            document.getElementById('whitePlayerName').textContent = aiName;
+            renderAvatarEl(document.getElementById('whiteAvatar'), aiAvatar);
+            document.getElementById('whiteBadge').style.display = 'none';
+            avatarOf[1] = myAvatar;
+            avatarOf[2] = aiAvatar;
+            // 隐藏联机专属 UI，显示 AI 控制
+            document.querySelector('.room-hint').style.display = 'none';
+            document.querySelector('.room-actions').style.display = 'none';
+            document.getElementById('onlineRestartBtn').style.display = 'none';
+            document.getElementById('aiControls').style.display = 'flex';
+            document.getElementById('waitingText').style.display = 'none';
+            // 开局
+            initBoard();
+            document.getElementById('boardSection').style.display = 'inline-block';
+            drawBoard();
+            updateTurnIndicator();
+            showToast('对局开始！你执黑先手，AI：' + AI_LEVELS[difficulty].name);
+        }
+
+        // 退出人机对局，返回主菜单
+        function leaveAiGame() {
+            vsAi = false;
+            if (aiThinkingTimer) { clearTimeout(aiThinkingTimer); aiThinkingTimer = null; }
+            document.getElementById('aiControls').style.display = 'none';
+            document.getElementById('onlineRestartBtn').style.display = '';
+            document.querySelector('.room-hint').style.display = '';
+            document.querySelector('.room-actions').style.display = '';
+            goBack();
+        }
+
+        function cancelAiGame() {
+            document.getElementById('aiDifficultyModal').classList.remove('active');
+        }
+
+        function updateWaitingText(text) {
+            const el = document.getElementById('waitingText');
+            if (text) {
+                el.textContent = text;
+                el.style.display = 'block';
+            } else {
+                el.style.display = 'none';
+            }
+        }
+
+        // =====================================================
+        //  页面交互
+        // =====================================================
+
+        function eventHumanVsAi() {
+            // 人机对战：弹出难度选择
+            const modal = document.getElementById('aiDifficultyModal');
+            modal.classList.add('active');
+        }
+
+        function event1_startGame() {
+            switchPage('lobbyPage');
+            connectLobby();          // 进入联机大厅，订阅房间列表
+        }
+
+        function switchPage(targetPageId) {
+            document.querySelectorAll('.page').forEach(page => page.classList.remove('active'));
+            const target = document.getElementById(targetPageId);
+            if (target) target.classList.add('active');
+        }
+
+        // ---------- 创建房间（沿用「创建房间」交互，新增密码与执棋选择） ----------
+        function handleCreateRoom() { showCreateRoomModal(); }
+
+        function showCreateRoomModal() {
+            const modal = document.getElementById('createRoomModal');
+            document.getElementById('createNicknameInput').value = myNickname || currentUser || '';
+            document.getElementById('createPasswordInput').value = '';
+            selectHostColor('random');
+            modal.classList.add('active');
+            setTimeout(() => document.getElementById('createNicknameInput').focus(), 100);
+        }
+        function hideCreateRoomModal() { document.getElementById('createRoomModal').classList.remove('active'); }
+        function cancelCreateRoom() { hideCreateRoomModal(); }
+
+        function selectHostColor(c) {
+            myHostColor = c;
+            document.querySelectorAll('#colorChoice .color-btn').forEach(b => {
+                b.classList.toggle('active', b.dataset.color === c);
+            });
+        }
+
+        async function confirmCreateRoom() {
+            const nickname = document.getElementById('createNicknameInput').value.trim();
+            if (!nickname) { showToast('请输入昵称！'); return; }
+            const password = document.getElementById('createPasswordInput').value.trim();
+            if (!ensureNetworkLib()) return;
+            hideCreateRoomModal();
+            createRoom(nickname, password, myHostColor);
+        }
+
+        // ---------- 加入房间（从大厅点击房间卡片触发） ----------
+        function showJoinRoomModal() {
+            const modal = document.getElementById('joinRoomModal');
+            document.getElementById('joinNicknameInput').value = myNickname || currentUser || '';
+            document.getElementById('roomNumberInput').value = '';
+            modal.classList.add('active');
+            setTimeout(() => document.getElementById('joinNicknameInput').focus(), 100);
+        }
+        function hideJoinRoomModal() { document.getElementById('joinRoomModal').classList.remove('active'); }
+
+        // 点击大厅中的房间卡片：加密房弹密码框，公开房预填房间号
+        function openJoinFromCard(roomId, locked) {
+            const modal = document.getElementById('joinRoomModal');
+            const rn = document.getElementById('roomNumberInput');
+            document.getElementById('joinNicknameInput').value = myNickname || currentUser || '';
+            rn.value = locked ? '' : roomId;  // 加密房需手动输入密码（即房间号）
+            rn.readOnly = !locked;            // 公开房锁定房间号，只填昵称
+            modal.classList.add('active');
+            setTimeout(() => document.getElementById('joinNicknameInput').focus(), 100);
+        }
+
+        async function confirmJoinRoom() {
+            const nickname = document.getElementById('joinNicknameInput').value.trim();
+            const roomId = document.getElementById('roomNumberInput').value.trim();
+            if (!nickname) { showToast('请输入昵称！'); return; }
+            if (!roomId) { showToast('请输入房间号/密码！'); return; }
+            if (!ensureNetworkLib()) return;
+            hideJoinRoomModal();
+            joinRoom(nickname, roomId);
+        }
+
+        function cancelJoinRoom() { hideJoinRoomModal(); }
+
+        function goBack() {
+            clearJoinWatchdog();
+            cleanupRelay();
+            inLobby = false;
+            lobbyRooms = {};
+            currentRoom = { number: null, hostNickname: null, guestNickname: null, hostAvatar: null, guestAvatar: null };
+            myRole = null;
+            myNickname = null;
+            myColor = null;
+            myAvatar = null;
+            oppAvatar = null;
+            avatarOf = {};
+            gameActive = false;
+            gameOver = false;
+            roomReady = false;
+            document.getElementById('boardSection').style.display = 'none';
+            document.getElementById('waitingSelf').style.display = 'flex';
+            document.getElementById('playerSlots').style.display = 'none';
+            document.getElementById('selfName').textContent = '---';
+            document.getElementById('selfAvatar').textContent = '🙂';
+            document.getElementById('selfBadge').textContent = '房主';
+            document.getElementById('whitePlayerName').textContent = '等待加入...';
+            document.getElementById('whitePlayerName').classList.add('empty');
+            document.getElementById('blackPlayerName').textContent = '---';
+            document.getElementById('blackPlayerName').classList.add('empty');
+            document.getElementById('blackAvatar').textContent = '🙂';
+            document.getElementById('whiteAvatar').textContent = '🙂';
+            switchPage('mainPage');
+        }
+
+        async function copyRoomNumber() {
+            const roomNum = currentRoom.number;
+            if (!roomNum) return;
+            try {
+                await navigator.clipboard.writeText(roomNum);
+                showToast('房间号已复制');
+            } catch {
+                const ta = document.createElement('textarea');
+                ta.value = roomNum;
+                document.body.appendChild(ta);
+                ta.select();
+                document.execCommand('copy');
+                document.body.removeChild(ta);
+                showToast('房间号已复制');
+            }
+        }
+
+        function leaveRoom() {
+            if (confirm('确定要离开房间吗？')) {
+                sendData({ type: 'leave' });
+                cleanupRelay();
+                goBack();
+            }
+        }
+
+        function showToast(message) {
+            const container = document.getElementById('toastContainer');
+            const toast = document.createElement('div');
+            toast.className = 'toast';
+            toast.textContent = message;
+            container.appendChild(toast);
+            setTimeout(() => toast.classList.add('show'), 10);
+            setTimeout(() => {
+                toast.classList.remove('show');
+                setTimeout(() => toast.parentNode && toast.parentNode.removeChild(toast), 500);
+            }, 2500);
+        }
+
+        // =====================================================
+        //  登录 / 注册（账号后端优先级：自建服务端(server) > Supabase > 本地账号(local)）
+        // =====================================================
+        const USERS_KEY = 'gomoku_users';      // 仅本地回退模式使用
+        const SESSION_KEY = 'gomoku_session';  // 仅本地回退模式使用
+        let authMode = 'login';                // 'login' | 'register'
+        let authBackend = 'local';             // 'mqtt' | 'server' | 'supabase' | 'local'
+        let sbClient = null;                   // Supabase 客户端
+
+        // ===== Supabase 配置：填入你的项目地址与 anon key 即启用服务端账号 =====
+        // 获取方式：Supabase 后台 → 项目 → Settings → API → Project URL / anon public key
+        // 并在 Authentication → Providers 中开启 Email，且建议关闭 “Confirm email”（否则注册后需验证邮箱）
+        const SUPABASE_URL = '';        // 例如 https://xxxx.supabase.co
+        const SUPABASE_ANON_KEY = '';   // anon public key
+
+        // ===== 账号后端 =====
+        // 默认采用「公共 MQTT 保留消息」存储账号：零服务器、零 token、跨设备通用，
+        // 且不依赖本会话（比 localtunnel 更永久）。游戏联机也走同一 MQTT，无需额外配置。
+        // 如需自建服务端账号，把 relay-server.js 部署后填 AUTH_API_URL 即可（优先级低于 mqtt）。
+        const AUTH_API_URL = '';        // 自建账号服务地址（留空则不使用；默认用公共 MQTT）
+        const AUTH_TOKEN_KEY = 'gomoku_auth_token';  // 登录令牌本地存储键
+
+        function initAuthBackend() {
+            // 后端优先级：公共 MQTT(mqtt) > 自建服务端(server) > Supabase > 本地账号(local)
+            if (typeof mqtt !== 'undefined') {
+                authBackend = 'mqtt';
+            } else if (AUTH_API_URL && !AUTH_API_URL.includes('YOUR_') && typeof fetch !== 'undefined') {
+                authBackend = 'server';
+            } else if (SUPABASE_URL && SUPABASE_ANON_KEY && !SUPABASE_URL.includes('YOUR_')
+                && typeof window.supabase !== 'undefined') {
+                try {
+                    sbClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+                    authBackend = 'supabase';
+                } catch (e) { authBackend = 'local'; }
+            } else {
+                authBackend = 'local';
+            }
+        }
+
+        // Supabase Auth 以邮箱为唯一标识，这里把用户名映射成邮箱（显示名仍为原用户名）
+        function toEmail(username) { return username.trim().toLowerCase() + '@gomoku.app'; }
+        function sbUsername(user) {
+            if (user && user.user_metadata && user.user_metadata.username) return user.user_metadata.username;
+            if (user && user.email) return user.email.split('@')[0];
+            return null;
+        }
+        function mapSbError(err) {
+            const m = (err && err.message) ? err.message : String(err);
+            if (/Invalid login credentials/.test(m)) return '用户名或密码错误';
+            if (/User already registered/.test(m)) return '该用户名已被注册';
+            if (/Password should be at least/.test(m)) return '密码至少 6 位';
+            if (/Email not confirmed/.test(m)) return '账号待确认，请先确认邮箱（或在 Supabase 后台关闭“邮箱确认”）';
+            return m;
+        }
+
+        // ----- 公共 MQTT 账号存储（保留消息，零服务器/零 token/跨设备）-----
+        function mqttReady() { return !!(mqttClient && mqttClient.connected); }
+        function waitForMqtt(timeout = 8000) {
+            return new Promise((resolve) => {
+                if (mqttReady()) return resolve(true);
+                if (!mqttClient) connectMqtt();
+                if (!mqttClient) return resolve(false);
+                let done = false;
+                const onC = () => { if (!done) { done = true; clearTimeout(timer); mqttClient.off('connect', onC); resolve(true); } };
+                const timer = setTimeout(() => {
+                    if (!done) { done = true; mqttClient.off('connect', onC); resolve(mqttReady()); }
+                }, timeout);
+                mqttClient.on('connect', onC);
+            });
+        }
+        function accountTopic(username) { return 'gomoku/accounts/' + username.trim().toLowerCase(); }
+        function safeParse(s) { try { return JSON.parse(s); } catch (e) { return null; } }
+        function publishRetained(topic, obj) {
+            if (mqttReady()) mqttClient.publish(topic, JSON.stringify(obj), { qos: 1, retain: true });
+        }
+        // 读取保留消息；无消息或超时返回 null
+        function readRetained(topic, timeout = 2000) {
+            return new Promise((resolve) => {
+                if (!mqttClient) return resolve(null);
+                let done = false;
+                const onMsg = (t, payload) => {
+                    if (t === topic && !done) {
+                        done = true; clearTimeout(timer);
+                        try { mqttClient.unsubscribe(topic); } catch (e) {}
+                        mqttClient.off('message', onMsg);
+                        resolve(payload ? safeParse(payload.toString()) : null);
+                    }
+                };
+                const timer = setTimeout(() => {
+                    if (!done) { done = true; try { mqttClient.unsubscribe(topic); } catch (e) {} mqttClient.off('message', onMsg); resolve(null); }
+                }, timeout);
+                mqttClient.subscribe(topic, { qos: 1 }, () => {});
+                mqttClient.on('message', onMsg);
+            });
+        }
+        // 浏览器端 PBKDF2-SHA256 加盐哈希（与 relay-server 同安全等级）
+        function bytesToHex(b) { return Array.from(b).map(x => x.toString(16).padStart(2, '0')).join(''); }
+        function hexToBytes(h) { const a = []; for (let i = 0; i < h.length; i += 2) a.push(parseInt(h.substr(i, 2), 16)); return new Uint8Array(a); }
+        async function pbkdf2Hash(password, saltHex) {
+            const enc = new TextEncoder();
+            const salt = saltHex ? hexToBytes(saltHex) : crypto.getRandomValues(new Uint8Array(16));
+            const key = await crypto.subtle.importKey('raw', enc.encode(password), 'PBKDF2', false, ['deriveBits']);
+            const bits = await crypto.subtle.deriveBits({ name: 'PBKDF2', salt, iterations: 100000, hash: 'SHA-256' }, key, 256);
+            return { salt: bytesToHex(salt), hash: bytesToHex(new Uint8Array(bits)) };
+        }
+
+        // 自建账号服务请求封装（relay-server.js 的 HTTP 接口）
+        async function authApi(method, path, body, token) {
+            const headers = { 'Content-Type': 'application/json' };
+            if (token) headers['Authorization'] = 'Bearer ' + token;
+            const res = await fetch(AUTH_API_URL + path, {
+                method, headers, body: body ? JSON.stringify(body) : undefined
+            });
+            let data = {};
+            try { data = await res.json(); } catch (e) {}
+            return { status: res.status, data };
+        }
+
+        function switchAuthTab(mode) {
+            authMode = mode;
+            document.getElementById('tabLogin').classList.toggle('active', mode === 'login');
+            document.getElementById('tabRegister').classList.toggle('active', mode === 'register');
+            document.getElementById('authConfirmField').style.display = (mode === 'register') ? 'block' : 'none';
+            document.getElementById('authSubmit').textContent = (mode === 'login') ? '登录' : '注册';
+            document.getElementById('authPassword').setAttribute('autocomplete', mode === 'login' ? 'current-password' : 'new-password');
+            setAuthHint('');
+        }
+
+        function setAuthHint(msg, type) {
+            const el = document.getElementById('authHint');
+            el.textContent = msg || '';
+            el.className = 'auth-hint' + (type ? ' ' + type : '');
+        }
+        function setAuthModeNote() {
+            const el = document.getElementById('authModeNote');
+            if (!el) return;
+            if (authBackend === 'mqtt') {
+                el.textContent = '账号已启用（公共 MQTT 跨设备同步，免服务器/免注册平台）';
+                el.className = 'auth-mode ok';
+            } else if (authBackend === 'server') {
+                el.textContent = '已连接服务端账号（自建中继，跨设备通用）';
+                el.className = 'auth-mode ok';
+            } else if (authBackend === 'supabase') {
+                el.textContent = '已连接服务端账号（Supabase，跨设备通用）';
+                el.className = 'auth-mode ok';
+            } else {
+                el.textContent = '本地账号模式：未配置服务端，账号仅存于本机浏览器';
+                el.className = 'auth-mode';
+            }
+        }
+
+        // 本地回退模式用的存储（仅当未配置 Supabase 时生效）
+        function getUsers() {
+            try { return JSON.parse(localStorage.getItem(USERS_KEY)) || {}; }
+            catch (e) { return {}; }
+        }
+        function saveUsers(u) { localStorage.setItem(USERS_KEY, JSON.stringify(u)); }
+        async function hashPassword(pw) {
+            try {
+                if (window.crypto && crypto.subtle) {
+                    const data = new TextEncoder().encode(pw);
+                    const buf = await crypto.subtle.digest('SHA-256', data);
+                    return 'sha_' + [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('');
+                }
+            } catch (e) {}
+            let h = 5381;
+            for (let i = 0; i < pw.length; i++) h = (((h << 5) + h) + pw.charCodeAt(i)) >>> 0;
+            return 'fb_' + h.toString(16);
+        }
+
+        // ---------- 统一账号接口（Supabase / 本地 共用） ----------
+        async function authRegister(username, pw) {
+            if (authBackend === 'mqtt') {
+                if (!await waitForMqtt()) throw new Error('网络未连接，无法注册');
+                const topic = accountTopic(username);
+                const existing = await readRetained(topic);
+                if (existing) throw new Error('该用户名已被注册');
+                const { salt, hash } = await pbkdf2Hash(pw);
+                publishRetained(topic, { display: username, salt, hash, created: Date.now() });
+                return username;
+            }
+            if (authBackend === 'server') {
+                const { status, data } = await authApi('POST', '/api/register', { username, password: pw });
+                if (!data.ok) throw new Error(data.error || ('注册失败(' + status + ')'));
+                localStorage.setItem(AUTH_TOKEN_KEY, data.token);
+                return data.username;
+            } else if (authBackend === 'supabase') {
+                const { data, error } = await sbClient.auth.signUp({
+                    email: toEmail(username), password: pw,
+                    options: { data: { username: username } }
+                });
+                if (error) throw new Error(mapSbError(error));
+                if (!data.session && data.user) throw new Error('注册成功，请先确认邮箱（或到 Supabase 后台关闭“邮箱确认”）');
+                return username;
+            } else {
+                const users = getUsers();
+                if (users[username]) throw new Error('该用户名已被注册');
+                users[username] = { pw: await hashPassword(pw), created: Date.now() };
+                saveUsers(users);
+                return username;
+            }
+        }
+        async function authLogin(username, pw) {
+            if (authBackend === 'mqtt') {
+                if (!await waitForMqtt()) throw new Error('网络未连接，无法登录');
+                const u = await readRetained(accountTopic(username));
+                if (!u) throw new Error('用户不存在，请先注册');
+                const { hash } = await pbkdf2Hash(pw, u.salt);
+                if (hash !== u.hash) throw new Error('密码错误');
+                return u.display || username;
+            }
+            if (authBackend === 'server') {
+                const { status, data } = await authApi('POST', '/api/login', { username, password: pw });
+                if (!data.ok) throw new Error(data.error || ('登录失败(' + status + ')'));
+                localStorage.setItem(AUTH_TOKEN_KEY, data.token);
+                return data.username;
+            } else if (authBackend === 'supabase') {
+                const { data, error } = await sbClient.auth.signInWithPassword({ email: toEmail(username), password: pw });
+                if (error) throw new Error(mapSbError(error));
+                return sbUsername(data.session.user);
+            } else {
+                const users = getUsers();
+                const rec = users[username];
+                if (!rec) throw new Error('用户名不存在，请先注册');
+                if (rec.pw !== await hashPassword(pw)) throw new Error('密码错误');
+                return username;
+            }
+        }
+        async function authLogout() {
+            if (authBackend === 'mqtt') { clearSession(); return; }
+            if (authBackend === 'server') {
+                const token = localStorage.getItem(AUTH_TOKEN_KEY);
+                if (token) { try { await authApi('POST', '/api/logout', null, token); } catch (e) {} }
+            } else if (authBackend === 'supabase') {
+                try { await sbClient.auth.signOut(); } catch (e) {}
+            }
+            clearSession();
+        }
+        async function authRestore() {
+            if (authBackend === 'mqtt') return getSession();
+            if (authBackend === 'server') {
+                const token = localStorage.getItem(AUTH_TOKEN_KEY);
+                if (!token) return null;
+                try {
+                    const { status, data } = await authApi('GET', '/api/me', null, token);
+                    if (status === 200 && data.username) return data.username;
+                } catch (e) {}
+                return null;
+            } else if (authBackend === 'supabase') {
+                try {
+                    const { data } = await sbClient.auth.getSession();
+                    if (data.session && data.session.user) return sbUsername(data.session.user);
+                } catch (e) {}
+                return null;
+            }
+            return getSession();
+        }
+
+        async function submitAuth() {
+            const username = document.getElementById('authUsername').value.trim();
+            const pw = document.getElementById('authPassword').value;
+            if (!username) { setAuthHint('请输入用户名', 'error'); return; }
+            if (!pw) { setAuthHint('请输入密码', 'error'); return; }
+            try {
+                let uname;
+                if (authMode === 'register') {
+                    const minLen = (authBackend === 'server' || authBackend === 'supabase' || authBackend === 'mqtt') ? 6 : 4;
+                    if (pw.length < minLen) { setAuthHint('密码至少 ' + minLen + ' 位', 'error'); return; }
+                    const confirm = document.getElementById('authConfirm').value;
+                    if (pw !== confirm) { setAuthHint('两次输入的密码不一致', 'error'); return; }
+                    uname = await authRegister(username, pw);
+                } else {
+                    uname = await authLogin(username, pw);
+                }
+                setSession(uname);
+                setAuthHint('登录成功，正在进入...', 'ok');
+                enterApp();
+            } catch (e) {
+                setAuthHint(e.message || '操作失败', 'error');
+            }
+        }
+
+        function setSession(username) {
+            localStorage.setItem(SESSION_KEY, username);
+            currentUser = username;
+        }
+        function getSession() {
+            return localStorage.getItem(SESSION_KEY);
+        }
+        function clearSession() {
+            localStorage.removeItem(SESSION_KEY);
+            localStorage.removeItem(AUTH_TOKEN_KEY);
+            currentUser = null;
+        }
+
+        function enterApp() {
+            applyProfile();
+            updateUserBadge();
+            switchPage('mainPage');
+        }
+
+        async function doLogout() {
+            await authLogout();
+            document.getElementById('userBadge').style.display = 'none';
+            document.getElementById('authUsername').value = '';
+            document.getElementById('authPassword').value = '';
+            document.getElementById('authConfirm').value = '';
+            switchAuthTab('login');
+            switchPage('authPage');
+            setAuthHint('');
+        }
+
+        function updateUserBadge() {
+            const u = currentUser || getSession();
+            if (u) {
+                currentUser = u;
+                if (!myNickname) myNickname = userProfile.nickname || u;
+                if (!myAvatar) myAvatar = userProfile.avatar || randomAvatar();
+                document.getElementById('badgeName').textContent = myNickname || u;
+                renderAvatarEl(document.getElementById('badgeAvatar'), myAvatar);
+                document.getElementById('userBadge').style.display = 'flex';
+            } else {
+                document.getElementById('userBadge').style.display = 'none';
+            }
+        }
+
+        // ===== 个人信息：头像 / 昵称 / 积分 =====
+        // 渲染头像元素：emoji 直接显示文字；data: URL 图片用 <img> 显示
+        function renderAvatarEl(el, avatar) {
+            if (!el) return;
+            if (avatar && typeof avatar === 'string' && avatar.indexOf('data:') === 0) {
+                el.innerHTML = '<img src="' + avatar + '" alt="头像" style="width:100%;height:100%;object-fit:cover;border-radius:50%;display:block;">';
+            } else {
+                el.textContent = (avatar && typeof avatar === 'string') ? avatar : '🙂';
+            }
+        }
+        function profileKey() { return 'gomoku_profile_' + (currentUser || 'guest'); }
+        function loadProfile() {
+            try { return JSON.parse(localStorage.getItem(profileKey())); } catch (e) { return null; }
+        }
+        function saveProfileToStore(p) {
+            try { localStorage.setItem(profileKey(), JSON.stringify(p)); } catch (e) {}
+        }
+        // 从存储恢复个人信息并同步到本机昵称/头像
+        function applyProfile() {
+            const p = loadProfile();
+            userProfile = (p && typeof p === 'object') ? p : {};
+            if (!userProfile.avatar) userProfile.avatar = randomAvatar();
+            if (userProfile.points == null) userProfile.points = 1000;
+            if (!userProfile.nickname) userProfile.nickname = currentUser || '玩家';
+            myNickname = userProfile.nickname;
+            myAvatar = userProfile.avatar;
+        }
+
+        function openProfilePanel() {
+            applyProfile();
+            document.getElementById('profileUsername').textContent = '@' + (currentUser || '玩家');
+            document.getElementById('profilePoints').textContent = userProfile.points || 1000;
+            document.getElementById('profileNickname').value = userProfile.nickname || '';
+            renderAvatarEl(document.getElementById('profileAvatarBig'), userProfile.avatar);
+            const picker = document.getElementById('avatarPicker');
+            picker.innerHTML = '';
+            AVATAR_POOL.forEach(function (a) {
+                const b = document.createElement('button');
+                b.className = 'avatar-opt' + (a === userProfile.avatar ? ' selected' : '');
+                b.textContent = a;
+                b.onclick = function () { selectProfileAvatar(a); };
+                picker.appendChild(b);
+            });
+            document.getElementById('profileModal').classList.add('active');
+        }
+        function selectProfileAvatar(a) {
+            userProfile.avatar = a;
+            renderAvatarEl(document.getElementById('profileAvatarBig'), a);
+            const opts = document.getElementById('avatarPicker').children;
+            for (let i = 0; i < opts.length; i++) {
+                opts[i].classList.toggle('selected', opts[i].textContent === a);
+            }
+        }
+        function onAvatarFileSelected(e) {
+            const file = e.target.files && e.target.files[0];
+            if (!file) return;
+            if (file.size > 2 * 1024 * 1024) { showToast('图片太大，请选择 2MB 以内'); return; }
+            const reader = new FileReader();
+            reader.onload = function (ev) {
+                const dataUrl = ev.target.result;
+                userProfile.avatar = dataUrl;
+                renderAvatarEl(document.getElementById('profileAvatarBig'), dataUrl);
+                const opts = document.getElementById('avatarPicker').children;
+                for (let i = 0; i < opts.length; i++) opts[i].classList.remove('selected');
+            };
+            reader.readAsDataURL(file);
+        }
+        function saveProfilePanel() {
+            const nn = (document.getElementById('profileNickname').value || '').trim();
+            if (!nn) { showToast('昵称不能为空'); return; }
+            if (nn.length > 12) { showToast('昵称最多 12 字'); return; }
+            userProfile.nickname = nn;
+            userProfile.points = userProfile.points || 1000;
+            saveProfileToStore(userProfile);
+            myNickname = nn;
+            myAvatar = userProfile.avatar;
+            updateUserBadge();
+            // 若已在房间内，同步本地头像显示（不影响已发出的对手信息）
+            if (document.getElementById('selfAvatar')) renderAvatarEl(document.getElementById('selfAvatar'), myAvatar);
+            closeProfilePanel();
+            showToast('个人信息已保存');
+        }
+        function closeProfilePanel() {
+            document.getElementById('profileModal').classList.remove('active');
+        }
+
+        // =====================================================
+        //  初始化
+        // =====================================================
+        document.addEventListener('DOMContentLoaded', async function() {
+            // 初始化账号后端（Supabase 或本地回退），并恢复会话
+            initAuthBackend();
+            setAuthModeNote();
+            const restored = await authRestore();
+            if (restored) {
+                currentUser = restored;
+                applyProfile();
+                switchPage('mainPage');
+            } else {
+                switchPage('authPage');
+            }
+            updateUserBadge();
+
+            // 初始绘制空棋盘（隐藏状态）
+            drawBoard();
+
+            // 回车键支持（登录/注册）
+            document.getElementById('authUsername').addEventListener('keypress', e => {
+                if (e.key === 'Enter') document.getElementById('authPassword').focus();
+            });
+            document.getElementById('authPassword').addEventListener('keypress', e => {
+                if (e.key === 'Enter') {
+                    if (authMode === 'register' && document.getElementById('authConfirmField').style.display !== 'none') {
+                        document.getElementById('authConfirm').focus();
+                    } else {
+                        submitAuth();
+                    }
+                }
+            });
+            document.getElementById('authConfirm').addEventListener('keypress', e => {
+                if (e.key === 'Enter') submitAuth();
+            });
+
+            // 回车键支持（创建/加入房间）
+            document.getElementById('createNicknameInput').addEventListener('keypress', e => {
+                if (e.key === 'Enter') confirmCreateRoom();
+            });
+            document.getElementById('joinNicknameInput').addEventListener('keypress', e => {
+                if (e.key === 'Enter') document.getElementById('roomNumberInput').focus();
+            });
+            document.getElementById('roomNumberInput').addEventListener('keypress', e => {
+                if (e.key === 'Enter') confirmJoinRoom();
+            });
+            // 房间号/密码输入：允许任意字符（密码可为字母），最多 16 位
+            document.getElementById('roomNumberInput').addEventListener('input', e => {
+                e.target.value = e.target.value.slice(0, 16);
+            });
+
+            // ESC 关闭模态框
+            document.addEventListener('keydown', e => {
+                if (e.key === 'Escape') {
+                    if (document.getElementById('createRoomModal').classList.contains('active')) cancelCreateRoom();
+                    else if (document.getElementById('joinRoomModal').classList.contains('active')) cancelJoinRoom();
+                }
+            });
+        });
+    </script>
+</body>
+</html>
