@@ -768,6 +768,43 @@
             width: fit-content;
         }
         .local-file-btn:hover { filter: brightness(1.05); }
+        /* ===== 个人信息：棋局记录 ===== */
+        .profile-games {
+            margin: 14px 0 4px;
+            border-top: 1px dashed #e6d3b3;
+            padding-top: 10px;
+        }
+        .profile-games-summary {
+            display: flex; justify-content: space-around;
+            font-size: 13px; color: #8B4513; margin-bottom: 8px;
+            letter-spacing: 1px;
+        }
+        .profile-games-summary b { font-size: 15px; }
+        .profile-games-summary .w b { color: #2e8b57; }
+        .profile-games-summary .l b { color: #c0392b; }
+        .profile-games-summary .d b { color: #888; }
+        .game-records {
+            max-height: 168px; overflow-y: auto;
+            display: flex; flex-direction: column; gap: 6px;
+        }
+        .game-record-row {
+            display: flex; align-items: center; gap: 8px;
+            background: #fff8ee; border: 1px solid #ecdcbf;
+            border-radius: 8px; padding: 6px 10px; font-size: 13px;
+        }
+        .gr-result {
+            flex: 0 0 auto; font-weight: bold; width: 28px; text-align: center;
+            border-radius: 6px; padding: 2px 0; font-size: 13px;
+        }
+        .gr-result.win { color: #2e8b57; background: #e6f5ec; }
+        .gr-result.lose { color: #c0392b; background: #fbe9e7; }
+        .gr-result.draw { color: #888; background: #f0f0f0; }
+        .gr-info { flex: 1; min-width: 0; }
+        .gr-mode-opp {
+            color: #8B4513; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        .gr-time { color: #a0522d; opacity: 0.75; font-size: 11px; margin-top: 2px; }
+        .game-records .empty { color: #aaa; text-align: center; padding: 18px 0; font-size: 13px; }
         .modal-ok-btn { background: linear-gradient(145deg, #ff9a5a, #e8743b); color: #fff; border: 2px solid #cf6a32; }
         .modal-ok-btn:hover { filter: brightness(1.05); transform: translateY(-2px); }
 
@@ -1224,6 +1261,11 @@
                 📁 从本地选择图片
                 <input type="file" id="avatarFileInput" accept="image/*" style="display:none;" onchange="onAvatarFileSelected(event)">
             </label>
+            <div class="profile-games">
+                <p class="profile-section-label">棋局记录（最近 50 局）</p>
+                <div class="profile-games-summary" id="gameStats"></div>
+                <div class="game-records" id="gameRecords"></div>
+            </div>
             <div class="modal-btn-group">
                 <button class="modal-btn modal-cancel-btn" onclick="closeProfilePanel()">取消</button>
                 <button class="modal-btn modal-ok-btn" onclick="saveProfilePanel()">保存</button>
@@ -1911,6 +1953,7 @@
                 gameActive = false;
                 updateTurnIndicator();
                 showToast(currentPlayer === myColor ? '🎉 你赢了！' : '你输了');
+                recordGame(currentPlayer === myColor ? 'win' : 'lose', vsAi ? 'ai' : 'online', oppName());
                 if (!vsAi && myRole === 'host') publishRoomState('finished'); // 同步大厅状态
                 return;
             }
@@ -1937,6 +1980,7 @@
                 gameActive = false;
                 updateTurnIndicator();
                 showToast(player === myColor ? '🎉 你赢了！' : '对手获胜');
+                recordGame(player === myColor ? 'win' : 'lose', vsAi ? 'ai' : 'online', oppName());
                 if (myRole === 'host') publishRoomState('finished'); // 同步大厅状态
                 return;
             }
@@ -2424,6 +2468,7 @@
                         gameOver = true; gameActive = false;
                         updateTurnIndicator();
                         showToast('🤝 平局！');
+                        recordGame('draw', 'ai', oppName());
                     }
                     return;
                 }
@@ -2433,6 +2478,7 @@
                     gameOver = true; gameActive = false;
                     updateTurnIndicator();
                     showToast('🤖 AI（' + AI_LEVELS[aiDifficulty].name + '）获胜');
+                    recordGame('lose', 'ai', oppName());
                     return;
                 }
                 currentPlayer = 1;
@@ -3129,6 +3175,65 @@
         function saveProfileToStore(p) {
             try { localStorage.setItem(profileKey(), JSON.stringify(p)); } catch (e) {}
         }
+        // ===== 棋局记录（按用户名存 localStorage，最多 50 局） =====
+        function gamesKey() { return 'gomoku_games_' + (currentUser || 'guest'); }
+        function loadGames() {
+            try { return JSON.parse(localStorage.getItem(gamesKey())) || []; } catch (e) { return []; }
+        }
+        // 记录一局结果：result='win'|'lose'|'draw'，mode='ai'|'online'
+        function recordGame(result, mode, opponent) {
+            if (!currentUser || isAdminSession(currentUser) || currentUser === 'guest') return;
+            const arr = loadGames();
+            arr.unshift({ result: result, mode: mode, opponent: opponent || '—', ts: Date.now() });
+            while (arr.length > 50) arr.pop();
+            try { localStorage.setItem(gamesKey(), JSON.stringify(arr)); } catch (e) {}
+        }
+        // 对手显示名：人机取「AI·难度」，联机取对面座位名
+        function oppName() {
+            if (vsAi) return 'AI · ' + (AI_LEVELS[aiDifficulty] ? AI_LEVELS[aiDifficulty].name : '');
+            const oppId = (myColor === 1) ? 'whitePlayerName' : 'blackPlayerName';
+            const el = document.getElementById(oppId);
+            let t = el ? (el.textContent || '') : '';
+            if (t === '等待加入...' || t === '---' || !t.trim()) t = '对手';
+            return t;
+        }
+        function renderGameRecords() {
+            const statsEl = document.getElementById('gameStats');
+            const listEl = document.getElementById('gameRecords');
+            if (!statsEl || !listEl) return;
+            const games = loadGames();
+            const w = games.filter(g => g.result === 'win').length;
+            const l = games.filter(g => g.result === 'lose').length;
+            const d = games.filter(g => g.result === 'draw').length;
+            statsEl.innerHTML = '<span class="w">胜 <b>' + w + '</b></span>' +
+                                '<span class="l">负 <b>' + l + '</b></span>' +
+                                '<span class="d">平 <b>' + d + '</b></span>';
+            if (!games.length) {
+                listEl.innerHTML = '<p class="empty">还没有对局记录，去下一局吧！</p>';
+                return;
+            }
+            const RES = { win: ['胜', 'win'], lose: ['负', 'lose'], draw: ['平', 'draw'] };
+            listEl.innerHTML = '';
+            games.forEach(g => {
+                const r = RES[g.result] || ['—', 'draw'];
+                const row = document.createElement('div');
+                row.className = 'game-record-row';
+                const res = document.createElement('div');
+                res.className = 'gr-result ' + r[1];
+                res.textContent = r[0];
+                const info = document.createElement('div');
+                info.className = 'gr-info';
+                const mo = document.createElement('div');
+                mo.className = 'gr-mode-opp';
+                mo.textContent = (g.mode === 'ai' ? '人机' : '联机') + ' · ' + (g.opponent || '对手');
+                const tm = document.createElement('div');
+                tm.className = 'gr-time';
+                tm.textContent = timeAgo(g.ts);
+                info.appendChild(mo); info.appendChild(tm);
+                row.appendChild(res); row.appendChild(info);
+                listEl.appendChild(row);
+            });
+        }
         // 从存储恢复个人信息并同步到本机昵称/头像
         function applyProfile() {
             const p = loadProfile();
@@ -3156,6 +3261,7 @@
                 picker.appendChild(b);
             });
             document.getElementById('profileModal').classList.add('active');
+            renderGameRecords();
         }
         function selectProfileAvatar(a) {
             userProfile.avatar = a;
