@@ -817,6 +817,23 @@
         }
         .gr-time { color: #a0522d; opacity: 0.75; font-size: 11px; margin-top: 2px; }
         .game-records .empty { color: #aaa; text-align: center; padding: 18px 0; font-size: 13px; }
+        .gr-replay-tag {
+            flex: 0 0 auto; font-size: 12px; color: #6a4ca0;
+            background: #efe9f8; border: 1px solid #cdbef0; border-radius: 6px; padding: 2px 8px;
+        }
+        .gr-replay-tag.disabled { color: #bbb; background: #f2f2f2; border-color: #ddd; }
+        /* ===== 棋局回看弹窗 ===== */
+        .replay-box { max-width: 680px; }
+        .replay-canvas { display: block; margin: 8px auto; background: #f0d9b5; border-radius: 8px; max-width: 100%; }
+        .replay-meta { text-align: center; color: #8B4513; font-size: 13px; margin: 4px 0 8px; }
+        .replay-controls { display: flex; align-items: center; justify-content: center; gap: 10px; margin-top: 10px; flex-wrap: wrap; }
+        .replay-step { min-width: 66px; text-align: center; color: #8B4513; font-size: 14px; }
+        .replay-btn {
+            padding: 8px 14px; font-size: 14px; border-radius: 8px;
+            border: 2px solid #8B4513; background: #fff8ee; color: #8B4513; cursor: pointer;
+        }
+        .replay-btn:hover { transform: translateY(-1px); filter: brightness(1.03); }
+        .replay-play { background: linear-gradient(145deg, #6a4ca0, #9b7fd4); color: #fff; border-color: #5b3f93; }
         .modal-ok-btn { background: linear-gradient(145deg, #ff9a5a, #e8743b); color: #fff; border: 2px solid #cf6a32; }
         .modal-ok-btn:hover { filter: brightness(1.05); transform: translateY(-2px); }
 
@@ -1388,6 +1405,25 @@
         </div>
     </div>
 
+    <!-- 棋局回看 -->
+    <div id="replayModal" class="modal-overlay">
+        <div class="modal-box replay-box">
+            <button class="modal-close" onclick="closeReplay()">×</button>
+            <h3 class="modal-title">棋局回看</h3>
+            <p class="replay-meta" id="replayMeta"></p>
+            <canvas id="replayCanvas" width="620" height="620" class="replay-canvas"></canvas>
+            <div class="replay-controls">
+                <button class="replay-btn" onclick="replayPrev()">◀ 上一步</button>
+                <span class="replay-step" id="replayStep">0 / 0</span>
+                <button class="replay-btn" onclick="replayNext()">下一步 ▶</button>
+                <button class="replay-btn replay-play" id="replayPlayBtn" onclick="toggleReplayPlay()">▶ 自动播放</button>
+            </div>
+            <div class="modal-btn-group">
+                <button class="modal-btn modal-cancel-btn" onclick="closeReplay()">关闭</button>
+            </div>
+        </div>
+    </div>
+
     <div id="toastContainer"></div>
 
     <!-- mqtt.js：本地内置（国内访问稳定），CDN 仅作兜底 -->
@@ -1448,6 +1484,7 @@
         let moveCountdownTimer = null; // 倒计时显示刷新计时器（setInterval）
         let moveDeadline = 0;        // 当前回合截止时间戳（ms）
         let lastMove = null;        // 最近一步落子坐标 {x, y}，用于绿色边框标记
+        let moveLog = [];           // 本局落子序列 [{x, y, c}]，用于棋局回看
 
         // ===== 房间存活 / 在线状态监测 =====
         const ROOM_TTL = 20000;            // 大厅房间存活时间：超过该时间未刷新心跳则视为已解散（仅 MQTT 模式生效）
@@ -2376,6 +2413,7 @@
          */
         function initBoard() {
             board = Array.from({ length: BOARD_SIZE }, () => Array(BOARD_SIZE).fill(0));
+            moveLog = [];           // 每局开始清空落子记录
             currentPlayer = 1; // 黑方先手
             gameActive = true;
             gameOver = false;
@@ -2410,6 +2448,7 @@
 
             board[y][x] = currentPlayer;
             lastMove = { x, y };
+            moveLog.push({ x: x, y: y, c: currentPlayer }); // 记录落子用于回看
             drawBoard();
 
             // 发送给对手（人机模式不发送）
@@ -2444,6 +2483,7 @@
         function handleRemoteMove(x, y, player) {
             board[y][x] = player;
             lastMove = { x, y };
+            moveLog.push({ x: x, y: y, c: player }); // 记录落子用于回看
             drawBoard();
 
             if (checkWin(x, y, player)) {
@@ -3027,6 +3067,7 @@
                 }
                 board[mv.y][mv.x] = 2;
                 lastMove = { x: mv.x, y: mv.y };
+                moveLog.push({ x: mv.x, y: mv.y, c: 2 }); // 记录落子用于回看
                 drawBoard();
                 if (checkWin(mv.x, mv.y, 2)) {
                     gameOver = true; gameActive = false;
@@ -3795,7 +3836,7 @@
         function recordGame(result, mode, opponent) {
             if (!currentUser || isAdminSession(currentUser) || currentUser === 'guest') return;
             const arr = loadGames();
-            arr.unshift({ result: result, mode: mode, opponent: opponent || '—', ts: Date.now() });
+            arr.unshift({ result: result, mode: mode, opponent: opponent || '—', ts: Date.now(), moves: moveLog.slice() });
             while (arr.length > 50) arr.pop();
             try { localStorage.setItem(gamesKey(), JSON.stringify(arr)); } catch (e) {}
         }
@@ -3841,9 +3882,93 @@
                 tm.className = 'gr-time';
                 tm.textContent = timeAgo(g.ts);
                 info.appendChild(mo); info.appendChild(tm);
-                row.appendChild(res); row.appendChild(info);
+                const tag = document.createElement('div');
+                if (g.moves && g.moves.length) {
+                    tag.className = 'gr-replay-tag';
+                    tag.textContent = '👁 回看';
+                    row.style.cursor = 'pointer';
+                    row.onclick = (function (gm) { return function () { openReplay(gm); }; })(g);
+                } else {
+                    tag.className = 'gr-replay-tag disabled';
+                    tag.textContent = '—';
+                }
+                row.appendChild(res); row.appendChild(info); row.appendChild(tag);
                 listEl.appendChild(row);
             });
+        }
+        // ===== 棋局回看 =====
+        let replayBoard = [];
+        let replayMoves = [];
+        let replayIdx = 0;       // 已展示到第几手（0 = 空盘）
+        let replayTimer = null;
+        let replayCanvas = null, replayCtx = null;
+        function openReplay(game) {
+            if (!game || !game.moves || !game.moves.length) { showToast('该对局暂无回放数据'); return; }
+            stopReplayPlay();
+            replayMoves = game.moves;
+            replayIdx = 0;
+            replayCanvas = document.getElementById('replayCanvas');
+            const dim = PADDING * 2 + (BOARD_SIZE - 1) * CELL;
+            replayCanvas.width = dim; replayCanvas.height = dim;
+            replayCtx = replayCanvas.getContext('2d');
+            const resText = { win: '胜', lose: '负', draw: '平' }[game.result] || '—';
+            document.getElementById('replayMeta').textContent =
+                (game.mode === 'ai' ? '人机' : '联机') + ' · 对手 ' + (game.opponent || '—') + ' · 结果 ' + resText;
+            document.getElementById('replayModal').classList.add('active');
+            applyReplayTo(0);
+        }
+        function drawReplayBoard() {
+            const c = replayCtx, dim = replayCanvas.width;
+            c.clearRect(0, 0, dim, dim);
+            c.fillStyle = '#f0d9b5'; c.fillRect(0, 0, dim, dim);
+            c.strokeStyle = '#8B4513'; c.lineWidth = 1.5;
+            for (let i = 0; i < BOARD_SIZE; i++) {
+                c.beginPath(); c.moveTo(PADDING, PADDING + i * CELL); c.lineTo(PADDING + (BOARD_SIZE - 1) * CELL, PADDING + i * CELL); c.stroke();
+                c.beginPath(); c.moveTo(PADDING + i * CELL, PADDING); c.lineTo(PADDING + i * CELL, PADDING + (BOARD_SIZE - 1) * CELL); c.stroke();
+            }
+            const stars = [[3, 3], [11, 3], [3, 11], [11, 11], [7, 7]];
+            c.fillStyle = '#8B4513';
+            for (const [sx, sy] of stars) { c.beginPath(); c.arc(PADDING + sx * CELL, PADDING + sy * CELL, 4, 0, Math.PI * 2); c.fill(); }
+            const lm = replayIdx > 0 ? replayMoves[replayIdx - 1] : null;
+            for (let y = 0; y < BOARD_SIZE; y++) for (let x = 0; x < BOARD_SIZE; x++) {
+                if (replayBoard[y][x] !== 0) {
+                    const isLast = lm && lm.x === x && lm.y === y;
+                    const cx = PADDING + x * CELL, cy = PADDING + y * CELL, r = CELL / 2 - 3;
+                    c.beginPath(); c.arc(cx, cy, r, 0, Math.PI * 2);
+                    c.fillStyle = (replayBoard[y][x] === 1) ? '#222' : '#fafafa';
+                    c.fill();
+                    c.strokeStyle = (replayBoard[y][x] === 1) ? '#000' : '#bbb'; c.lineWidth = 1.5; c.stroke();
+                    if (isLast) { c.beginPath(); c.arc(cx, cy, r + 2, 0, Math.PI * 2); c.strokeStyle = '#2ecc40'; c.lineWidth = 3; c.stroke(); }
+                }
+            }
+        }
+        function applyReplayTo(idx) {
+            replayIdx = idx;
+            replayBoard = Array.from({ length: BOARD_SIZE }, () => Array(BOARD_SIZE).fill(0));
+            for (let i = 0; i < idx; i++) { const m = replayMoves[i]; replayBoard[m.y][m.x] = m.c; }
+            drawReplayBoard();
+            document.getElementById('replayStep').textContent = replayIdx + ' / ' + replayMoves.length;
+        }
+        function replayNext() { if (replayIdx < replayMoves.length) applyReplayTo(replayIdx + 1); }
+        function replayPrev() { if (replayIdx > 0) applyReplayTo(replayIdx - 1); }
+        function toggleReplayPlay() {
+            if (replayTimer) { stopReplayPlay(); return; }
+            if (replayIdx >= replayMoves.length) applyReplayTo(0);
+            const btn = document.getElementById('replayPlayBtn');
+            if (btn) btn.textContent = '⏸ 暂停';
+            replayTimer = setInterval(function () {
+                if (replayIdx >= replayMoves.length) { stopReplayPlay(); return; }
+                replayNext();
+            }, 700);
+        }
+        function stopReplayPlay() {
+            if (replayTimer) { clearInterval(replayTimer); replayTimer = null; }
+            const btn = document.getElementById('replayPlayBtn');
+            if (btn) btn.textContent = '▶ 自动播放';
+        }
+        function closeReplay() {
+            stopReplayPlay();
+            document.getElementById('replayModal').classList.remove('active');
         }
         // 从存储恢复个人信息并同步到本机昵称/头像
         function applyProfile() {
