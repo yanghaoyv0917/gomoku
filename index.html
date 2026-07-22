@@ -738,7 +738,17 @@
         .diff-btn:hover { transform: translateY(-3px); box-shadow: 0 6px 14px rgba(200,90,40,0.45); filter: brightness(1.05); }
 
         /* ===== 个人信息面板 ===== */
-        .profile-box { max-width: 380px; }
+        .profile-box {
+            max-width: 380px;
+            max-height: 82vh;       /* 限制上下长度，超出部分可滚轮滚动 */
+            overflow-y: auto;
+            padding-top: 28px;
+            padding-bottom: 28px;
+        }
+        /* 滚轮样式（webkit） */
+        .profile-box::-webkit-scrollbar { width: 8px; }
+        .profile-box::-webkit-scrollbar-thumb { background: #c9a66b; border-radius: 8px; }
+        .profile-box::-webkit-scrollbar-track { background: transparent; }
         .modal-close {
             position: absolute; top: 10px; right: 14px;
             border: none; background: transparent; font-size: 26px; line-height: 1;
