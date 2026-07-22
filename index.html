@@ -458,6 +458,12 @@
         .status-playing { color: #2e7d32; }
         .status-finished { color: #888; }
         .lobby-empty { color: #8B4513; font-size: 18px; margin-top: 40px; }
+        .room-card-actions { margin-top: 10px; display: flex; justify-content: flex-end; }
+        .room-card-btn { padding: 8px 18px; border: none; border-radius: 20px; font-size: 15px; cursor: pointer; font-family: inherit; transition: transform 0.15s, background 0.2s; }
+        .room-card-btn:hover { transform: translateY(-1px); }
+        .room-card-btn:active { transform: translateY(1px); }
+        .join-btn { background: linear-gradient(135deg, #b8860b, #e0a83c); color: #fff; }
+        .spectate-btn { background: linear-gradient(135deg, #6a4ca0, #9b7fd4); color: #fff; }
 
         /* 执棋选择 */
         .color-choice { display: flex; gap: 10px; flex-wrap: wrap; }
@@ -1315,16 +1321,16 @@
     <!-- 加入私密房间模态框（公开房间点击卡片直接加入，不弹此框） -->
     <div id="joinRoomModal" class="modal-overlay">
         <div class="modal-box">
-            <h3 class="modal-title">加入私密房间</h3>
-            <p class="modal-subtitle">该房间为私密房间，需输入密码后加入</p>
-            <p class="input-hint" style="text-align:center;">将以昵称「<span id="joinNickPreview"></span>」加入房间</p>
+            <h3 class="modal-title" id="joinModalTitle">加入私密房间</h3>
+            <p class="modal-subtitle" id="joinModalSubtitle">该房间为私密房间，需输入密码后加入</p>
+            <p class="input-hint" style="text-align:center;">将以昵称「<span id="joinNickPreview"></span>」<span id="joinModeWord">加入</span>房间</p>
             <div class="input-wrapper">
                 <label class="field-label" id="joinFieldLabel">房间密码：</label>
                 <input type="text" id="roomNumberInput" class="nickname-input" placeholder="请输入房间密码..." maxlength="16" autocomplete="off">
                 <p class="input-hint">房间号 <b id="joinRoomNo"></b></p>
             </div>
             <div class="modal-btn-group">
-                <button class="modal-btn modal-confirm-btn" onclick="confirmJoinRoom()">加入</button>
+                <button class="modal-btn modal-confirm-btn" id="joinConfirmBtn" onclick="confirmJoinRoom()">加入</button>
                 <button class="modal-btn modal-cancel-btn" onclick="cancelJoinRoom()">取消</button>
             </div>
         </div>
@@ -1397,7 +1403,7 @@
         // ===== 全局状态 =====
         let ws = null;              // WebSocket 中继连接
         let wsRetryTimer = null;    // 断线重连定时器（防重入）
-        let myRole = null;          // 'host' | 'guest'
+        let myRole = null;          // 'host' | 'guest' | 'spectator'
         let currentUser = null;     // 已登录的用户名（来自本地账号系统）
         let myNickname = null;
         let myColor = null;         // 1=黑 | 2=白（双方进房后随机分配）
@@ -1421,6 +1427,10 @@
         };
         let myRoomType = 'public'; // 建房时选择的房间类型：'public' | 'private'
         let pendingJoinRoom = null;// 点击私密房卡片后暂存的房间号（等待输入密码）
+        let pendingJoinIsPrivate = false; // 暂存：目标房间是否私密
+        let pendingJoinMode = 'join';     // 'join'（加入对局）| 'spectate'（观战）
+        let spectateWatchdogTimer = null; // 进入观战的超时看门狗
+        let spectateReady = false;        // 是否已收到房主快照、成功进入观战
 
         // ===== 棋盘状态 =====
         const BOARD_SIZE = 15;
@@ -1639,7 +1649,7 @@
 
         // 房间主题订阅成功后的对局接入逻辑（房主/客人共用）
         function afterRoomConnect() {
-            // 进入房间即启动在线状态心跳与监测（双方）
+            // 进入房间即启动在线状态心跳与监测（观战者也会发送心跳，但监测逻辑对观战者不触发解散）
             startPresence();
             startPresenceMonitor();
             updatePeerStatus();
@@ -1654,6 +1664,12 @@
                         host: { nickname: myNickname, avatar: myAvatar },
                         guest: { nickname: currentRoom.guestNickname, avatar: currentRoom.guestAvatar } });
                 }
+            } else if (myRole === 'spectator') {
+                // 观战者：向房主请求当前棋盘快照，等待 snapshot 后展示对局
+                showSelfCard(myNickname, myAvatar, '观战');
+                updateWaitingText('👁 正在进入观战...');
+                mqttPublish({ type: 'spectate', nickname: myNickname, avatar: myAvatar });
+                startSpectateWatchdog();
             } else {
                 showSelfCard(myNickname, myAvatar, '客人');
                 updateWaitingText('⏳ 正在连接房主...');
@@ -1752,12 +1768,18 @@
                     : '<span class="room-card-type type-public">🌐 公开</span>';
                 const idLabel = isPriv ? '🔒 私密房间' : ('房间 ' + escapeHtml(r.room));
                 const players = (r.players && r.players.length) ? r.players.map(escapeHtml).join('、') : '—';
-                return '<div class="room-card" onclick="openJoinFromCard(\'' + escapeAttr(r.room) + '\', ' + (isPriv ? 'true' : 'false') + ')">' +
+                // 等待中房间可加入；对局中/已结束房间可进入观战
+                const isPlaying = (r.status === 'playing' || r.status === 'finished');
+                const actionHtml = isPlaying
+                    ? '<button class="room-card-btn spectate-btn" onclick="openJoinFromCard(\'' + escapeAttr(r.room) + '\', ' + (isPriv ? 'true' : 'false') + ', \'' + (r.status || 'playing') + '\')">👁 观战</button>'
+                    : '<button class="room-card-btn join-btn" onclick="openJoinFromCard(\'' + escapeAttr(r.room) + '\', ' + (isPriv ? 'true' : 'false') + ', \'waiting\')">加入</button>';
+                return '<div class="room-card">' +
                     '<div class="room-card-top"><span class="room-card-id">' + idLabel + '</span>' + typeBadge + '</div>' +
                     '<div class="room-card-row">房主：<b>' + escapeHtml(r.host) + '</b></div>' +
                     '<div class="room-card-row">状态：<b class="' + statusClass + '">' + statusText + '</b></div>' +
                     '<div class="room-card-row">' + colorLine + '</div>' +
                     '<div class="room-card-row">已进入：<b>' + players + '</b></div>' +
+                    '<div class="room-card-actions">' + actionHtml + '</div>' +
                     '</div>';
             }).join('');
         }
@@ -1802,6 +1824,54 @@
             }
         }
 
+        // 应用房主下发的棋盘快照（观战者进入进行中对局时使用）
+        function applySnapshot(msg) {
+            if (myRole !== 'spectator') return;
+            // 重建棋盘（容错：缺失时按空处理）
+            if (!board.length) initBoard();
+            for (let y = 0; y < BOARD_SIZE; y++) {
+                for (let x = 0; x < BOARD_SIZE; x++) {
+                    board[y][x] = (msg.board && msg.board[y] && typeof msg.board[y][x] === 'number') ? msg.board[y][x] : 0;
+                }
+            }
+            currentPlayer = (typeof msg.currentPlayer === 'number') ? msg.currentPlayer : 1;
+            myColor = null; // 观战者不执子
+            if (msg.host) {
+                currentRoom.hostNickname = msg.host.nickname;
+                currentRoom.hostAvatar = msg.host.avatar;
+            }
+            if (msg.guest) {
+                currentRoom.guestNickname = msg.guest.nickname;
+                currentRoom.guestAvatar = msg.guest.avatar;
+            }
+            currentHostIsBlack = !!msg.hostIsBlack;
+            if (msg.host && msg.guest) assignPlayerNames(currentHostIsBlack, msg.host.nickname, msg.guest.nickname);
+            document.getElementById('boardSection').style.display = 'inline-block';
+            drawBoard();
+            gameActive = !!msg.gameActive;
+            gameOver = !!msg.gameOver;
+            updateTurnIndicator();
+            updateWaitingText('');
+            clearSpectateWatchdog();
+            spectateReady = true;
+            showToast('已进入观战');
+        }
+
+        // 观战进入看门狗：超时未收到房主快照则判定房间不存在/已结束
+        function startSpectateWatchdog() {
+            if (spectateWatchdogTimer) clearTimeout(spectateWatchdogTimer);
+            spectateWatchdogTimer = setTimeout(() => {
+                if (myRole === 'spectator' && !spectateReady) {
+                    showToast('未能进入观战，房间可能已结束或无人在线');
+                    cleanupRelay();
+                    setTimeout(() => switchPage('lobbyPage'), 1500);
+                }
+            }, 6000);
+        }
+        function clearSpectateWatchdog() {
+            if (spectateWatchdogTimer) { clearTimeout(spectateWatchdogTimer); spectateWatchdogTimer = null; }
+        }
+
         // ===== 房间存活心跳 + 在线状态监测 =====
         // 房主周期性刷新大厅房间广播（带 lastActive），使房间保持「有人在线」；
         // 一旦房主离线且不再刷新，超过 ROOM_TTL 后大厅自动过滤掉该房间（即解散）。
@@ -1842,6 +1912,7 @@
         function presenceMonitorTick() {
             updatePeerStatus();
             if (!currentRoom.key) return;
+            if (myRole === 'spectator') return; // 观战者不参与房间解散逻辑
             const now = Date.now();
             const peerRole = (myRole === 'host') ? 'guest' : 'host';
             const peerLast = presence[peerRole] || 0;
@@ -1921,6 +1992,26 @@
                         mqttPublish({ type: 'start', hostIsBlack: (myColor === 1),
                             host: { nickname: myNickname, avatar: myAvatar },
                             guest: { nickname: currentRoom.guestNickname, avatar: currentRoom.guestAvatar } });
+                    }
+                    break;
+                case 'spectate':
+                    if (myRole === 'host') {
+                        // 观战者进入：下发当前棋盘快照，使其能直接看到进行中的对局
+                        mqttPublish({
+                            type: 'snapshot',
+                            board: board,
+                            currentPlayer: currentPlayer,
+                            hostIsBlack: currentHostIsBlack,
+                            host: { nickname: currentRoom.hostNickname, avatar: currentRoom.hostAvatar },
+                            guest: { nickname: currentRoom.guestNickname, avatar: currentRoom.guestAvatar },
+                            gameActive: gameActive,
+                            gameOver: gameOver
+                        });
+                    }
+                    break;
+                case 'snapshot':
+                    if (myRole === 'spectator') {
+                        applySnapshot(msg);
                     }
                     break;
                 case 'start':
@@ -2027,6 +2118,10 @@
                 case 'chat':
                     if (msg.text) appendChat(msg.text, msg.nickname, false);
                     break;
+
+                case 'snapshot':
+                    if (myRole === 'spectator') applySnapshot(msg);
+                    break;
             }
         }
 
@@ -2073,6 +2168,31 @@
             currentRoom.key = roomKey(roomId, currentRoom.password, isPrivate);
             switchPage('roomPage');
             document.getElementById('roomNumber').textContent = roomId;
+            connectRelay();
+        }
+
+        /**
+         * 进入观战（旁观正在进行/已结束的对局，不参与落子）
+         * @param {string} status 大厅中该房间的状态：'playing' | 'finished'
+         */
+        function spectateRoom(nickname, roomId, isPrivate, password, status) {
+            myRole = 'spectator';
+            myColor = null;          // 观战者不执子
+            myNickname = nickname;
+            myAvatar = randomAvatar();
+            currentRoom.number = roomId;
+            currentRoom.isPrivate = !!isPrivate;
+            currentRoom.password = isPrivate ? (password || '') : '';
+            currentRoom.key = roomKey(roomId, currentRoom.password, isPrivate);
+            currentRoomStatus = (status === 'finished') ? 'finished' : 'playing';
+            spectateReady = false;
+            initBoard(); // 预分配棋盘数组，等待房主快照填充
+            switchPage('roomPage');
+            document.getElementById('roomNumber').textContent = roomId;
+            // 观战界面：先显示提示，收到快照后展示棋盘
+            document.getElementById('boardSection').style.display = 'none';
+            showSelfCard(myNickname, myAvatar, '观战');
+            updateWaitingText('👁 正在进入观战...');
             connectRelay();
         }
 
@@ -2270,6 +2390,7 @@
          * 本地落子（玩家点击）
          */
         function placePiece(x, y) {
+            if (myRole === 'spectator') { showToast('观战中，无法落子'); return; }
             if (!gameActive || gameOver) return;
             if (board[y][x] !== 0) return;
             if (currentPlayer !== myColor) {
@@ -2320,21 +2441,26 @@
                 gameActive = false;
                 stopMoveTimer();
                 updateTurnIndicator();
-                showToast(player === myColor ? '🎉 你赢了！' : '对手获胜');
-                recordGame(player === myColor ? 'win' : 'lose', vsAi ? 'ai' : 'online', oppName());
-                if (myRole === 'host') publishRoomState('finished'); // 同步大厅状态
+                if (myRole === 'spectator') {
+                    showToast('对局结束');
+                } else {
+                    showToast(player === myColor ? '🎉 你赢了！' : '对手获胜');
+                    recordGame(player === myColor ? 'win' : 'lose', vsAi ? 'ai' : 'online', oppName());
+                    if (myRole === 'host') publishRoomState('finished'); // 同步大厅状态
+                }
                 return;
             }
 
             currentPlayer = player === 1 ? 2 : 1;
             updateTurnIndicator();
-            startMoveTimer(); // 轮到本方/对方，重启限时
+            if (myRole !== 'spectator') startMoveTimer(); // 轮到本方/对方，重启限时（观战者不计时）
         }
 
         /**
          * 重新开始（请求对方）
          */
         function requestRestart() {
+            if (myRole === 'spectator') { showToast('观战中，无法操作'); return; }
             if (vsAi) {
                 if (aiThinkingTimer) { clearTimeout(aiThinkingTimer); aiThinkingTimer = null; }
                 resetBoard();
@@ -2492,6 +2618,17 @@
          */
         function updateTurnIndicator() {
             const indicator = document.getElementById('turnIndicator');
+            if (myRole === 'spectator') {
+                if (gameOver) {
+                    indicator.textContent = '👁 观战 · 对局结束';
+                    indicator.style.color = '#a0522d';
+                } else {
+                    const who = currentPlayer === 1 ? '黑方 ⚫' : '白方 ⚪';
+                    indicator.textContent = '👁 观战中 · 轮到' + who + '落子';
+                    indicator.style.color = '#6a4ca0';
+                }
+                return;
+            }
             if (gameOver) {
                 indicator.textContent = '对局结束';
                 indicator.style.color = '#a0522d';
@@ -2523,7 +2660,7 @@
         // =====================================================
         function startMoveTimer() {
             stopMoveTimer();
-            if (vsAi || !gameActive || gameOver) return;
+            if (vsAi || !gameActive || gameOver || myRole === 'spectator') return;
             moveDeadline = Date.now() + MOVE_TIME_LIMIT;
             updateMoveTimerDisplay();
             moveTimer = setTimeout(onMoveTimeout, MOVE_TIME_LIMIT);
@@ -2550,7 +2687,7 @@
 
         // 当前轮到方超时：判其负
         function onMoveTimeout() {
-            if (gameOver || !gameActive || vsAi) return;
+            if (gameOver || !gameActive || vsAi || myRole === 'spectator') return;
             const loser = currentPlayer;
             endByTimeout(loser);
             if (!vsAi) sendData({ type: 'timeout', loser: loser }); // 通知对手同步结束
@@ -2558,7 +2695,7 @@
 
         // 超时结算（两端都会触发，以 !gameOver 去重）
         function endByTimeout(loser) {
-            if (gameOver || !gameActive) return;
+            if (gameOver || !gameActive || myRole === 'spectator') return;
             gameOver = true;
             gameActive = false;
             stopMoveTimer();
@@ -3020,20 +3157,48 @@
         function hideJoinRoomModal() { document.getElementById('joinRoomModal').classList.remove('active'); }
 
         // 点击大厅中的房间卡片：公开房直接进，私密房弹密码框
-        function openJoinFromCard(roomId, isPrivate) {
+        // 点击大厅房间卡片：根据房间状态分流「加入」或「观战」
+        function openJoinFromCard(roomId, isPrivate, status) {
+            const st = status || 'waiting';
+            if (st === 'waiting') {
+                pendingJoinMode = 'join';
+                if (!isPrivate) {
+                    // 公开房：无需密码，直接加入对局
+                    joinRoom(defaultNick(), roomId, false, '');
+                    return;
+                }
+                pendingJoinRoom = roomId;
+                pendingJoinIsPrivate = true;
+                showJoinModal(false, 'join');
+                return;
+            }
+            // 对局中 / 已结束：进入观战
+            pendingJoinMode = 'spectate';
             if (!isPrivate) {
-                // 公开房：无需密码，直接加入
-                joinRoom(defaultNick(), roomId, false, '');
+                // 公开房：无需密码，直接观战
+                spectateRoom(defaultNick(), roomId, false, '', st);
                 return;
             }
             pendingJoinRoom = roomId;
+            pendingJoinIsPrivate = true;
+            showJoinModal(false, 'spectate');
+        }
+
+        // 弹出私密房密码框（mode: join|spectate）
+        function showJoinModal(_unused, mode) {
             const modal = document.getElementById('joinRoomModal');
             const rn = document.getElementById('roomNumberInput');
             document.getElementById('joinNickPreview').textContent = defaultNick();
+            document.getElementById('joinRoomNo').textContent = pendingJoinRoom;
             rn.value = '';
             rn.readOnly = false;
             rn.placeholder = '请输入房间密码';
-            document.getElementById('joinRoomNo').textContent = roomId;
+            const spectating = (mode === 'spectate');
+            document.getElementById('joinModalTitle').textContent = spectating ? '观战私密房间' : '加入私密房间';
+            document.getElementById('joinModalSubtitle').textContent = spectating ? '该房间为私密房间，需输入密码后观战' : '该房间为私密房间，需输入密码后加入';
+            document.getElementById('joinModeWord').textContent = spectating ? '观战' : '加入';
+            document.getElementById('joinFieldLabel').textContent = '房间密码：';
+            document.getElementById('joinConfirmBtn').textContent = spectating ? '观战' : '加入';
             modal.classList.add('active');
             setTimeout(() => rn.focus(), 100);
         }
@@ -3046,24 +3211,32 @@
             if (!password) { showToast('请输入房间密码！'); return; }
             if (!ensureNetworkLib()) return;
             hideJoinRoomModal();
-            joinRoom(nickname, roomId, true, password);
+            if (pendingJoinMode === 'spectate') {
+                spectateRoom(nickname, roomId, true, password, 'playing');
+            } else {
+                joinRoom(nickname, roomId, true, password);
+            }
         }
 
         function cancelJoinRoom() { hideJoinRoomModal(); }
 
         function goBack() {
             clearJoinWatchdog();
+            clearSpectateWatchdog();
             stopMoveTimer();
             cleanupRelay();
             clearChat();          // 离开房间清空聊天记录
             chatJoinedHint = false;
             presence = { host: 0, guest: 0 }; // 重置在线状态
             currentRoomStatus = 'waiting';
+            spectateReady = false;
             updatePeerStatus();
             inLobby = false;
             lobbyRooms = {};
             currentRoom = { number: null, key: null, isPrivate: false, password: '', hostNickname: null, guestNickname: null, hostAvatar: null, guestAvatar: null };
             pendingJoinRoom = null;
+            pendingJoinIsPrivate = false;
+            pendingJoinMode = 'join';
             myRole = null;
             myNickname = null;
             myColor = null;
