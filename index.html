@@ -621,6 +621,9 @@
             word-break: break-all;
         }
         .room-hint { font-size: 13px; color: #8B4513; opacity: 0.85; margin: -8px 0 18px; letter-spacing: 1px; text-align: center; }
+        .move-timer { font-size: 15px; font-weight: bold; color: #2e7d32; margin: 6px 0 2px; text-align: center; letter-spacing: 1px; min-height: 20px; }
+        .move-timer.urgent { color: #c0392b; animation: timerBlink 1s steps(2, start) infinite; }
+        @keyframes timerBlink { 50% { opacity: 0.35; } }
 
         .players-section {
             background: linear-gradient(145deg, rgba(255,255,255,0.9), rgba(250,246,240,0.9));
@@ -1155,6 +1158,7 @@
             <div class="board-section" id="boardSection">
                 <canvas id="board" width="620" height="620"></canvas>
                 <div class="turn-indicator" id="turnIndicator"></div>
+                <div class="move-timer" id="moveTimer"></div>
                 <button class="restart-btn" id="onlineRestartBtn" onclick="requestRestart()">🔄 重新开始</button>
                 <!-- 人机对战专属控制（联机时隐藏） -->
                 <div class="ai-controls" id="aiControls" style="display:none;">
@@ -1320,6 +1324,7 @@
         const BOARD_SIZE = 15;
         const CELL = 40;
         const PADDING = 30;
+        const MOVE_TIME_LIMIT = 30000;   // 联机每步限时（毫秒），超时判负
         let board = [];             // 15x15: 0=空, 1=黑, 2=白
         let currentPlayer = 1;      // 当前轮到谁落子
         let gameActive = false;
@@ -1327,6 +1332,9 @@
         let vsAi = false;           // 是否人机对战模式
         let aiDifficulty = 1;       // 当前 AI 难度（1~9）
         let aiThinkingTimer = null; // AI 思考延时定时器
+        let moveTimer = null;        // 联机每步限时计时器（setTimeout）
+        let moveCountdownTimer = null; // 倒计时显示刷新计时器（setInterval）
+        let moveDeadline = 0;        // 当前回合截止时间戳（ms）
         let lastMove = null;        // 最近一步落子坐标 {x, y}，用于绿色边框标记
 
         // ===== DOM 引用 =====
@@ -1727,6 +1735,9 @@
                 case 'leave':
                     handleOpponentLeave();
                     break;
+                case 'timeout':
+                    endByTimeout(msg.loser);
+                    break;
             }
         }
 
@@ -1784,6 +1795,10 @@
 
                 case 'opponent_left':
                     handleOpponentLeave();
+                    break;
+
+                case 'timeout':
+                    endByTimeout(msg.loser);
                     break;
             }
         }
@@ -1901,6 +1916,7 @@
             }
             gameActive = false;
             gameOver = true;
+            stopMoveTimer();
             showToast('对手离开了房间');
             updateWaitingText('对手已离开');
             setTimeout(() => {
@@ -1960,6 +1976,7 @@
             drawBoard();
             updateWaitingText('');
             updateTurnIndicator();
+            startMoveTimer(); // 联机模式启动首步（黑方）限时
             showToast('对局开始！黑方先手');
             if (myRole === 'host') publishRoomState('playing'); // 同步大厅状态
         }
@@ -1986,6 +2003,7 @@
             if (checkWin(x, y, currentPlayer)) {
                 gameOver = true;
                 gameActive = false;
+                stopMoveTimer();
                 updateTurnIndicator();
                 showToast(currentPlayer === myColor ? '🎉 你赢了！' : '你输了');
                 recordGame(currentPlayer === myColor ? 'win' : 'lose', vsAi ? 'ai' : 'online', oppName());
@@ -1996,6 +2014,7 @@
             // 切换回合
             currentPlayer = currentPlayer === 1 ? 2 : 1;
             updateTurnIndicator();
+            startMoveTimer(); // 轮到对方，重启限时任其落子
 
             // 人机模式：轮到 AI（白方）落子
             if (vsAi && currentPlayer === 2) {
@@ -2014,6 +2033,7 @@
             if (checkWin(x, y, player)) {
                 gameOver = true;
                 gameActive = false;
+                stopMoveTimer();
                 updateTurnIndicator();
                 showToast(player === myColor ? '🎉 你赢了！' : '对手获胜');
                 recordGame(player === myColor ? 'win' : 'lose', vsAi ? 'ai' : 'online', oppName());
@@ -2023,6 +2043,7 @@
 
             currentPlayer = player === 1 ? 2 : 1;
             updateTurnIndicator();
+            startMoveTimer(); // 轮到本方/对方，重启限时
         }
 
         /**
@@ -2045,6 +2066,7 @@
             initBoard();
             drawBoard();
             updateTurnIndicator();
+            startMoveTimer(); // 重新开始：黑方先手，重启限时
         }
 
         /**
@@ -2207,6 +2229,59 @@
                 indicator.textContent = '○ 等待对手落子（' + (myColor === 1 ? '白' : '黑') + '）';
                 indicator.style.color = '#a0522d';
             }
+        }
+
+        // =====================================================
+        //  联机每步限时（超时判负）
+        //  规则：轮到某方落子时启动 30 秒倒计时；到点仍未落子则该方判负。
+        //  由于两端各自独立计时且基于同一 currentPlayer，结论一致，无需中心服务器裁决。
+        // =====================================================
+        function startMoveTimer() {
+            stopMoveTimer();
+            if (vsAi || !gameActive || gameOver) return;
+            moveDeadline = Date.now() + MOVE_TIME_LIMIT;
+            updateMoveTimerDisplay();
+            moveTimer = setTimeout(onMoveTimeout, MOVE_TIME_LIMIT);
+            moveCountdownTimer = setInterval(updateMoveTimerDisplay, 250);
+        }
+
+        function stopMoveTimer() {
+            if (moveTimer) { clearTimeout(moveTimer); moveTimer = null; }
+            if (moveCountdownTimer) { clearInterval(moveCountdownTimer); moveCountdownTimer = null; }
+            const el = document.getElementById('moveTimer');
+            if (el) { el.textContent = ''; el.classList.remove('urgent'); }
+        }
+
+        // 刷新倒计时显示
+        function updateMoveTimerDisplay() {
+            const el = document.getElementById('moveTimer');
+            if (!el) return;
+            if (vsAi || gameOver || !gameActive) { el.textContent = ''; el.classList.remove('urgent'); return; }
+            const remain = Math.max(0, moveDeadline - Date.now());
+            const sec = Math.ceil(remain / 1000);
+            el.textContent = '⏱ 本步剩余 ' + sec + ' 秒';
+            el.classList.toggle('urgent', sec <= 10);
+        }
+
+        // 当前轮到方超时：判其负
+        function onMoveTimeout() {
+            if (gameOver || !gameActive || vsAi) return;
+            const loser = currentPlayer;
+            endByTimeout(loser);
+            if (!vsAi) sendData({ type: 'timeout', loser: loser }); // 通知对手同步结束
+        }
+
+        // 超时结算（两端都会触发，以 !gameOver 去重）
+        function endByTimeout(loser) {
+            if (gameOver || !gameActive) return;
+            gameOver = true;
+            gameActive = false;
+            stopMoveTimer();
+            updateTurnIndicator();
+            const iWon = (loser !== myColor);
+            showToast(iWon ? '⏰ 对手超时，你赢了！' : '⏰ 你超时了，判负');
+            recordGame(iWon ? 'win' : 'lose', 'online', oppName());
+            if (myRole === 'host') publishRoomState('finished'); // 同步大厅状态
         }
 
         // =====================================================
@@ -2693,6 +2768,7 @@
 
         function goBack() {
             clearJoinWatchdog();
+            stopMoveTimer();
             cleanupRelay();
             inLobby = false;
             lobbyRooms = {};
@@ -2741,6 +2817,7 @@
 
         function leaveRoom() {
             if (confirm('确定要离开房间吗？')) {
+                stopMoveTimer();
                 sendData({ type: 'leave' });
                 cleanupRelay();
                 goBack();
