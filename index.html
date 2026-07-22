@@ -1173,12 +1173,8 @@
     <div id="createRoomModal" class="modal-overlay">
         <div class="modal-box">
             <h3 class="modal-title">创建房间</h3>
-            <p class="modal-subtitle">设置您的昵称与房间信息</p>
-            <div class="input-wrapper">
-                <label class="field-label">昵称：</label>
-                <input type="text" id="createNicknameInput" class="nickname-input" placeholder="请输入昵称..." maxlength="12" autocomplete="off">
-                <p class="input-hint">昵称长度不超过12个字符</p>
-            </div>
+            <p class="modal-subtitle">设置房间信息（昵称自动使用当前账号）</p>
+            <p class="input-hint" style="text-align:center;">将以昵称「<span id="createNickPreview"></span>」创建房间</p>
             <div class="input-wrapper">
                 <label class="field-label">房间密码（可选）：</label>
                 <input type="text" id="createPasswordInput" class="nickname-input" placeholder="留空则随机生成房间号" maxlength="16" autocomplete="off">
@@ -1203,12 +1199,8 @@
     <div id="joinRoomModal" class="modal-overlay">
         <div class="modal-box">
             <h3 class="modal-title">加入房间</h3>
-            <p class="modal-subtitle">请输入您的信息以加入对局</p>
-            <div class="input-wrapper">
-                <label class="field-label">请输入昵称：</label>
-                <input type="text" id="joinNicknameInput" class="nickname-input" placeholder="请输入昵称..." maxlength="12" autocomplete="off">
-                <p class="input-hint">昵称长度不超过12个字符</p>
-            </div>
+            <p class="modal-subtitle">输入房间号即可加入（昵称自动使用当前账号）</p>
+            <p class="input-hint" style="text-align:center;">将以昵称「<span id="joinNickPreview"></span>」加入房间</p>
             <div class="input-wrapper">
                 <label class="field-label">请输入房间号：</label>
                 <input type="text" id="roomNumberInput" class="nickname-input" placeholder="请输入房间号或密码..." maxlength="16" autocomplete="off">
@@ -2588,13 +2580,13 @@
         // ---------- 创建房间（沿用「创建房间」交互，新增密码与执棋选择） ----------
         function handleCreateRoom() { showCreateRoomModal(); }
 
+        function defaultNick() { return myNickname || userProfile.nickname || currentUser || '玩家'; }
         function showCreateRoomModal() {
             const modal = document.getElementById('createRoomModal');
-            document.getElementById('createNicknameInput').value = myNickname || currentUser || '';
+            document.getElementById('createNickPreview').textContent = defaultNick();
             document.getElementById('createPasswordInput').value = '';
             selectHostColor('random');
             modal.classList.add('active');
-            setTimeout(() => document.getElementById('createNicknameInput').focus(), 100);
         }
         function hideCreateRoomModal() { document.getElementById('createRoomModal').classList.remove('active'); }
         function cancelCreateRoom() { hideCreateRoomModal(); }
@@ -2607,8 +2599,7 @@
         }
 
         async function confirmCreateRoom() {
-            const nickname = document.getElementById('createNicknameInput').value.trim();
-            if (!nickname) { showToast('请输入昵称！'); return; }
+            const nickname = defaultNick();
             const password = document.getElementById('createPasswordInput').value.trim();
             if (!ensureNetworkLib()) return;
             hideCreateRoomModal();
@@ -2618,10 +2609,10 @@
         // ---------- 加入房间（从大厅点击房间卡片触发） ----------
         function showJoinRoomModal() {
             const modal = document.getElementById('joinRoomModal');
-            document.getElementById('joinNicknameInput').value = myNickname || currentUser || '';
+            document.getElementById('joinNickPreview').textContent = defaultNick();
             document.getElementById('roomNumberInput').value = '';
             modal.classList.add('active');
-            setTimeout(() => document.getElementById('joinNicknameInput').focus(), 100);
+            setTimeout(() => document.getElementById('roomNumberInput').focus(), 100);
         }
         function hideJoinRoomModal() { document.getElementById('joinRoomModal').classList.remove('active'); }
 
@@ -2629,17 +2620,16 @@
         function openJoinFromCard(roomId, locked) {
             const modal = document.getElementById('joinRoomModal');
             const rn = document.getElementById('roomNumberInput');
-            document.getElementById('joinNicknameInput').value = myNickname || currentUser || '';
+            document.getElementById('joinNickPreview').textContent = defaultNick();
             rn.value = locked ? '' : roomId;  // 加密房需手动输入密码（即房间号）
             rn.readOnly = !locked;            // 公开房锁定房间号，只填昵称
             modal.classList.add('active');
-            setTimeout(() => document.getElementById('joinNicknameInput').focus(), 100);
+            setTimeout(() => rn.focus(), 100);
         }
 
         async function confirmJoinRoom() {
-            const nickname = document.getElementById('joinNicknameInput').value.trim();
+            const nickname = defaultNick();
             const roomId = document.getElementById('roomNumberInput').value.trim();
-            if (!nickname) { showToast('请输入昵称！'); return; }
             if (!roomId) { showToast('请输入房间号/密码！'); return; }
             if (!ensureNetworkLib()) return;
             hideJoinRoomModal();
@@ -3360,13 +3350,7 @@
                 if (e.key === 'Enter') submitAuth();
             });
 
-            // 回车键支持（创建/加入房间）
-            document.getElementById('createNicknameInput').addEventListener('keypress', e => {
-                if (e.key === 'Enter') confirmCreateRoom();
-            });
-            document.getElementById('joinNicknameInput').addEventListener('keypress', e => {
-                if (e.key === 'Enter') document.getElementById('roomNumberInput').focus();
-            });
+            // 回车键支持（加入房间：房间号回车直接加入）
             document.getElementById('roomNumberInput').addEventListener('keypress', e => {
                 if (e.key === 'Enter') confirmJoinRoom();
             });
