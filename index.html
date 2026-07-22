@@ -449,6 +449,9 @@
         }
         .room-card-id { font-size: 22px; font-weight: bold; color: #5c3a1e; letter-spacing: 2px; }
         .room-card-lock { font-size: 20px; }
+        .room-card-type { font-size: 14px; font-weight: bold; padding: 3px 10px; border-radius: 20px; letter-spacing: 1px; }
+        .room-card-type.type-public { background: rgba(46,125,50,0.12); color: #2e7d32; border: 1px solid rgba(46,125,50,0.35); }
+        .room-card-type.type-private { background: rgba(176,54,54,0.12); color: #b03636; border: 1px solid rgba(176,54,54,0.35); }
         .room-card-row { font-size: 16px; color: #6b4a2b; margin: 3px 0; }
         .room-card-row b { color: #8B4513; }
         .status-waiting { color: #b8860b; }
@@ -1176,9 +1179,17 @@
             <p class="modal-subtitle">设置房间信息（昵称自动使用当前账号）</p>
             <p class="input-hint" style="text-align:center;">将以昵称「<span id="createNickPreview"></span>」创建房间</p>
             <div class="input-wrapper">
-                <label class="field-label">房间密码（可选）：</label>
-                <input type="text" id="createPasswordInput" class="nickname-input" placeholder="留空则随机生成房间号" maxlength="16" autocomplete="off">
-                <p class="input-hint">设置后他人需输入此密码才能加入；留空将自动生成</p>
+                <label class="field-label">房间类型：</label>
+                <div class="color-choice" id="roomTypeChoice">
+                    <button type="button" class="color-btn active" data-type="public" onclick="selectRoomType('public')">🌐 公开</button>
+                    <button type="button" class="color-btn" data-type="private" onclick="selectRoomType('private')">🔒 私密</button>
+                </div>
+                <p class="input-hint">公开房间无需密码，他人可直接进入；私密房间需设置密码</p>
+            </div>
+            <div class="input-wrapper" id="roomPasswordWrap" style="display:none;">
+                <label class="field-label">房间密码：</label>
+                <input type="text" id="createPasswordInput" class="nickname-input" placeholder="设置加入密码" maxlength="16" autocomplete="off">
+                <p class="input-hint">私密房间需设置密码，他人加入时必须输入</p>
             </div>
             <div class="input-wrapper">
                 <label class="field-label">执棋：</label>
@@ -1195,16 +1206,16 @@
         </div>
     </div>
 
-    <!-- 加入房间模态框 -->
+    <!-- 加入私密房间模态框（公开房间点击卡片直接加入，不弹此框） -->
     <div id="joinRoomModal" class="modal-overlay">
         <div class="modal-box">
-            <h3 class="modal-title">加入房间</h3>
-            <p class="modal-subtitle">输入房间号即可加入（昵称自动使用当前账号）</p>
+            <h3 class="modal-title">加入私密房间</h3>
+            <p class="modal-subtitle">该房间为私密房间，需输入密码后加入</p>
             <p class="input-hint" style="text-align:center;">将以昵称「<span id="joinNickPreview"></span>」加入房间</p>
             <div class="input-wrapper">
-                <label class="field-label">请输入房间号：</label>
-                <input type="text" id="roomNumberInput" class="nickname-input" placeholder="请输入房间号或密码..." maxlength="16" autocomplete="off">
-                <p class="input-hint">房间号为 5 位数字，例如 04217</p>
+                <label class="field-label" id="joinFieldLabel">房间密码：</label>
+                <input type="text" id="roomNumberInput" class="nickname-input" placeholder="请输入房间密码..." maxlength="16" autocomplete="off">
+                <p class="input-hint">房间号 <b id="joinRoomNo"></b></p>
             </div>
             <div class="modal-btn-group">
                 <button class="modal-btn modal-confirm-btn" onclick="confirmJoinRoom()">加入</button>
@@ -1293,12 +1304,17 @@
         let roomReady = false;       // 双方均已进房、对局已就绪（用于区分“真离开”与“握手重试”）
 
         let currentRoom = {
-            number: null,
+            number: null,           // 显示的 5 位房间号（公开/私密都有）
+            key: null,              // MQTT 房间主题键：公开=number，私密=number + '#' + password
+            isPrivate: false,       // 是否私密房间（true=需密码，false=公开）
+            password: '',           // 私密房间密码（仅私密房有效）
             hostNickname: null,
             guestNickname: null,
             hostAvatar: null,
             guestAvatar: null
         };
+        let myRoomType = 'public'; // 建房时选择的房间类型：'public' | 'private'
+        let pendingJoinRoom = null;// 点击私密房卡片后暂存的房间号（等待输入密码）
 
         // ===== 棋盘状态 =====
         const BOARD_SIZE = 15;
@@ -1354,6 +1370,14 @@
             return String(Math.floor(Math.random() * 100000)).padStart(5, '0');
         }
 
+        // 房间主题键：公开房=房间号；私密房=房间号 + '#' + 密码
+        // 私密房把密码编入主题，未持密码者无法订阅到房主所在主题，从而实现「需密码才能加入」。
+        function roomKey(number, password, isPrivate) {
+            return isPrivate ? (number + '#' + (password || '')) : number;
+        }
+        // 本端当前房间主题（用于订阅/发布）
+        function roomTopic() { return 'gomoku/' + (currentRoom.key || currentRoom.number || ''); }
+
         // 随机头像池（emoji），用于替代原有的黑白棋图案
         const AVATAR_POOL = ['🐱','🐶','🦊','🐼','🐸','🦁','🐯','🐰','🐨','🐮',
                              '🐵','🐔','🐧','🦄','🐝','🦋','🐢','🐙','🦖','🤖',
@@ -1392,9 +1416,9 @@
         function connectRelay() {
             if (useWsRelay()) connectWsRelay();
             else {
-                if (mqttClient && mqttClient.connected && currentRoom.number) {
+                if (mqttClient && mqttClient.connected && currentRoom.key) {
                     // 已连上大厅，只需追加订阅本房间主题并开始对局
-                    mqttClient.subscribe('gomoku/' + currentRoom.number, { qos: 0 }, () => afterRoomConnect());
+                    mqttClient.subscribe(roomTopic(), { qos: 0 }, () => afterRoomConnect());
                 } else {
                     connectMqtt(); // connectMqtt 在连接成功后订阅大厅+本房间
                 }
@@ -1444,7 +1468,7 @@
             ws.onerror = () => { try { ws.close(); } catch (e) {} };
         }
 
-        // 构造 WS 中继的 create/join 负载（携带执棋偏好与是否加密）
+        // 构造 WS 中继的 create/join 负载（携带执棋偏好与是否私密）
         function wsCreateJoinPayload() {
             return {
                 type: myRole === 'host' ? 'create' : 'join',
@@ -1452,7 +1476,8 @@
                 nickname: myNickname,
                 avatar: myAvatar,
                 hostColorPref: myHostColor,
-                locked: !!currentRoom.locked
+                isPrivate: !!currentRoom.isPrivate,
+                password: currentRoom.isPrivate ? currentRoom.password : ''
             };
         }
 
@@ -1473,13 +1498,13 @@
                 // 大厅主题常驻订阅（进入大厅即可看到所有房间）
                 mqttClient.subscribe('gomoku/lobby/+', { qos: 0 }, () => { lobbySubscribed = true; });
                 // 若已进入具体房间，订阅房间主题并触发对局逻辑
-                if (currentRoom.number) {
-                    mqttClient.subscribe('gomoku/' + currentRoom.number, { qos: 0 }, () => afterRoomConnect());
+                if (currentRoom.key) {
+                    mqttClient.subscribe(roomTopic(), { qos: 0 }, () => afterRoomConnect());
                 }
             });
             mqttClient.on('message', (t, payload) => {
                 if (t.indexOf('gomoku/lobby/') === 0) { handleLobbyMsg(t, payload); return; }
-                if (currentRoom.number && t === 'gomoku/' + currentRoom.number) {
+                if (currentRoom.key && t === roomTopic()) {
                     let msg; try { msg = JSON.parse(payload.toString()); } catch (e) { return; }
                     handleMqttMsg(msg);
                 }
@@ -1514,7 +1539,7 @@
 
         function mqttPublish(obj) {
             if (mqttClient && mqttClient.connected) {
-                mqttClient.publish('gomoku/' + currentRoom.number,
+                mqttClient.publish(roomTopic(),
                     JSON.stringify(Object.assign({ from: myId }, obj)), { qos: 0 });
             }
         }
@@ -1535,7 +1560,8 @@
             if (joinWatchdogTimer) clearTimeout(joinWatchdogTimer);
             joinWatchdogTimer = setTimeout(() => {
                 if (!roomReady) {
-                    showToast('房间不存在，请确认房间号是否正确');
+                    if (currentRoom.isPrivate) showToast('房间号或密码错误，无法加入');
+                    else showToast('房间不存在，请确认房间号是否正确');
                     cleanupRelay();
                     setTimeout(() => switchPage('lobbyPage'), 1500);
                 }
@@ -1588,11 +1614,14 @@
                 const statusText = r.status === 'playing' ? '对局中' : r.status === 'finished' ? '已结束' : '等待中';
                 const statusClass = r.status === 'playing' ? 'status-playing' : r.status === 'finished' ? 'status-finished' : 'status-waiting';
                 const colorLine = formatColorLine(r);
-                const idLabel = r.locked ? '🔒 私房' : ('房间 ' + escapeHtml(r.room));
+                const isPriv = !!(r.isPrivate || r.locked);
+                const typeBadge = isPriv
+                    ? '<span class="room-card-type type-private">🔒 私密</span>'
+                    : '<span class="room-card-type type-public">🌐 公开</span>';
+                const idLabel = isPriv ? '🔒 私密房间' : ('房间 ' + escapeHtml(r.room));
                 const players = (r.players && r.players.length) ? r.players.map(escapeHtml).join('、') : '—';
-                return '<div class="room-card" onclick="openJoinFromCard(\'' + escapeAttr(r.room) + '\', ' + (r.locked ? 'true' : 'false') + ')">' +
-                    '<div class="room-card-top"><span class="room-card-id">' + idLabel + '</span>' +
-                    (r.locked ? '<span class="room-card-lock">🔒</span>' : '') + '</div>' +
+                return '<div class="room-card" onclick="openJoinFromCard(\'' + escapeAttr(r.room) + '\', ' + (isPriv ? 'true' : 'false') + ')">' +
+                    '<div class="room-card-top"><span class="room-card-id">' + idLabel + '</span>' + typeBadge + '</div>' +
                     '<div class="room-card-row">房主：<b>' + escapeHtml(r.host) + '</b></div>' +
                     '<div class="room-card-row">状态：<b class="' + statusClass + '">' + statusText + '</b></div>' +
                     '<div class="room-card-row">' + colorLine + '</div>' +
@@ -1619,7 +1648,8 @@
             const white = (currentHostIsBlack === false) ? hostName : (currentHostIsBlack === true ? currentRoom.guestNickname : null);
             const announce = {
                 room: currentRoom.number,
-                locked: !!currentRoom.locked,
+                locked: !!currentRoom.isPrivate,
+                isPrivate: !!currentRoom.isPrivate,
                 host: hostName,
                 hostColorPref: myHostColor,
                 status: status,
@@ -1761,34 +1791,44 @@
         /**
          * 建立房间（房主）
          */
-        function createRoom(nickname, password, hostColor) {
+        function createRoom(nickname, isPrivate, password, hostColor) {
             myRole = 'host';
             myNickname = nickname;
             myColor = null; // 黑白方待双方进房后按房主偏好分配
             myAvatar = randomAvatar();
             myHostColor = hostColor || 'random';
-            // 房间号即「密码」：填了就用所填内容，留空则随机生成 5 位数字
-            const pw = (password && password.trim()) ? password.trim() : '';
-            currentRoom.number = pw || generateRoomNumber();
-            currentRoom.locked = !!pw;
+            // 房间号始终随机生成 5 位；私密房额外设置密码并编入主题键
+            const number = generateRoomNumber();
+            currentRoom.number = number;
+            currentRoom.isPrivate = !!isPrivate;
+            currentRoom.password = isPrivate ? (password || '') : '';
+            currentRoom.key = roomKey(number, currentRoom.password, isPrivate);
             currentRoom.hostNickname = nickname;
             currentRoom.hostAvatar = myAvatar;
-            document.getElementById('roomNumber').textContent = currentRoom.number;
+            document.getElementById('roomNumber').textContent = number;
             switchPage('roomPage');
-            showToast('房间创建成功！' + (currentRoom.locked ? ('密码: ' + currentRoom.number) : ('房间号: ' + currentRoom.number)));
+            showToast('房间创建成功！' + (isPrivate
+                ? ('房间号: ' + number + '，密码: ' + password)
+                : ('房间号: ' + number + '（公开，他人可直接加入）')));
             connectRelay();               // 复用「创建房间」交互：接入连接并订阅房间主题
             publishRoomState('waiting');  // 向大厅广播该房间
         }
 
         /**
          * 加入房间（客人）——从大厅点击房间卡片触发
+         * @param {string} roomId 房间号
+         * @param {boolean} isPrivate 是否私密房（私密房需密码）
+         * @param {string} password 私密房密码（公开房为空）
          */
-        function joinRoom(nickname, roomId) {
+        function joinRoom(nickname, roomId, isPrivate, password) {
             myRole = 'guest';
             myNickname = nickname;
             myColor = null; // 黑白方待进房后由房主分配
             myAvatar = randomAvatar();
             currentRoom.number = roomId;
+            currentRoom.isPrivate = !!isPrivate;
+            currentRoom.password = isPrivate ? (password || '') : '';
+            currentRoom.key = roomKey(roomId, currentRoom.password, isPrivate);
             switchPage('roomPage');
             document.getElementById('roomNumber').textContent = roomId;
             connectRelay();
@@ -1884,7 +1924,7 @@
                 if (myRole === 'host') clearAnnounce();
                 // 优雅离开：先通知对手（房主离开即“房间解散”），再断开
                 try {
-                    mqttClient.publish('gomoku/' + currentRoom.number,
+                    mqttClient.publish(roomTopic(),
                         JSON.stringify(Object.assign({ from: myId }, { type: 'leave' })), { qos: 0 });
                 } catch (e) {}
                 clearJoinWatchdog();
@@ -2586,7 +2626,15 @@
             document.getElementById('createNickPreview').textContent = defaultNick();
             document.getElementById('createPasswordInput').value = '';
             selectHostColor('random');
+            selectRoomType('public');   // 默认公开，隐藏密码框
             modal.classList.add('active');
+        }
+        function selectRoomType(t) {
+            myRoomType = t;
+            document.querySelectorAll('#roomTypeChoice .color-btn').forEach(b => {
+                b.classList.toggle('active', b.dataset.type === t);
+            });
+            document.getElementById('roomPasswordWrap').style.display = (t === 'private') ? 'block' : 'none';
         }
         function hideCreateRoomModal() { document.getElementById('createRoomModal').classList.remove('active'); }
         function cancelCreateRoom() { hideCreateRoomModal(); }
@@ -2600,40 +2648,45 @@
 
         async function confirmCreateRoom() {
             const nickname = defaultNick();
-            const password = document.getElementById('createPasswordInput').value.trim();
+            const isPrivate = (myRoomType === 'private');
+            const password = isPrivate ? document.getElementById('createPasswordInput').value.trim() : '';
+            if (isPrivate && !password) { showToast('请设置私密房间密码'); return; }
             if (!ensureNetworkLib()) return;
             hideCreateRoomModal();
-            createRoom(nickname, password, myHostColor);
+            createRoom(nickname, isPrivate, password, myHostColor);
         }
 
         // ---------- 加入房间（从大厅点击房间卡片触发） ----------
-        function showJoinRoomModal() {
-            const modal = document.getElementById('joinRoomModal');
-            document.getElementById('joinNickPreview').textContent = defaultNick();
-            document.getElementById('roomNumberInput').value = '';
-            modal.classList.add('active');
-            setTimeout(() => document.getElementById('roomNumberInput').focus(), 100);
-        }
         function hideJoinRoomModal() { document.getElementById('joinRoomModal').classList.remove('active'); }
 
-        // 点击大厅中的房间卡片：加密房弹密码框，公开房预填房间号
-        function openJoinFromCard(roomId, locked) {
+        // 点击大厅中的房间卡片：公开房直接进，私密房弹密码框
+        function openJoinFromCard(roomId, isPrivate) {
+            if (!isPrivate) {
+                // 公开房：无需密码，直接加入
+                joinRoom(defaultNick(), roomId, false, '');
+                return;
+            }
+            pendingJoinRoom = roomId;
             const modal = document.getElementById('joinRoomModal');
             const rn = document.getElementById('roomNumberInput');
             document.getElementById('joinNickPreview').textContent = defaultNick();
-            rn.value = locked ? '' : roomId;  // 加密房需手动输入密码（即房间号）
-            rn.readOnly = !locked;            // 公开房锁定房间号，只填昵称
+            rn.value = '';
+            rn.readOnly = false;
+            rn.placeholder = '请输入房间密码';
+            document.getElementById('joinRoomNo').textContent = roomId;
             modal.classList.add('active');
             setTimeout(() => rn.focus(), 100);
         }
 
         async function confirmJoinRoom() {
             const nickname = defaultNick();
-            const roomId = document.getElementById('roomNumberInput').value.trim();
-            if (!roomId) { showToast('请输入房间号/密码！'); return; }
+            const roomId = pendingJoinRoom;
+            const password = document.getElementById('roomNumberInput').value.trim();
+            if (!roomId) { showToast('房间信息缺失，请重试'); return; }
+            if (!password) { showToast('请输入房间密码！'); return; }
             if (!ensureNetworkLib()) return;
             hideJoinRoomModal();
-            joinRoom(nickname, roomId);
+            joinRoom(nickname, roomId, true, password);
         }
 
         function cancelJoinRoom() { hideJoinRoomModal(); }
@@ -2643,7 +2696,8 @@
             cleanupRelay();
             inLobby = false;
             lobbyRooms = {};
-            currentRoom = { number: null, hostNickname: null, guestNickname: null, hostAvatar: null, guestAvatar: null };
+            currentRoom = { number: null, key: null, isPrivate: false, password: '', hostNickname: null, guestNickname: null, hostAvatar: null, guestAvatar: null };
+            pendingJoinRoom = null;
             myRole = null;
             myNickname = null;
             myColor = null;
