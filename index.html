@@ -847,12 +847,12 @@
         /* 回看：双方胜率预测折线图 */
         .replay-chart-wrap { margin-top: 12px; padding: 8px 10px 4px; background: #faf6f0; border: 1px solid #ecdcbf; border-radius: 10px; }
         .replay-chart-title { font-size: 13px; color: #6a4ca0; font-weight: 600; margin-bottom: 4px; display: flex; justify-content: space-between; align-items: center; }
-        .chart-legend { display: inline-flex; align-items: center; gap: 4px; color: #555; }
-        .chart-legend b { color: #e8743b; font-weight: 700; margin-right: 10px; }
+        .chart-title-main b { color: #2f6fed; font-weight: 700; margin-left: 2px; }
+        .chart-legend { display: inline-flex; align-items: center; gap: 4px; color: #555; font-weight: 400; }
         .chart-sub { color: #a07b4a; font-weight: 400; font-size: 12px; }
         .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin: 0 3px -1px; }
-        .dot-black { background: #2b2b2b; }
-        .dot-white { background: #e8743b; }
+        .dot-my { background: #2f6fed; }
+        .dot-opp { background: #9b9b9b; }
         .replay-chart-canvas { display: block; width: 100%; height: 150px; }
         .replay-chart-empty { text-align: center; color: #aaa; font-size: 13px; padding: 10px; }
         .modal-ok-btn { background: linear-gradient(145deg, #ff9a5a, #e8743b); color: #fff; border: 2px solid #cf6a32; }
@@ -1441,8 +1441,8 @@
             </div>
             <div class="replay-chart-wrap" id="replayChartWrap">
                 <div class="replay-chart-title">
-                    <span class="chart-legend"><i class="dot dot-black"></i>黑 <b id="replayBlackVal">—</b><i class="dot dot-white"></i>白 <b id="replayWhiteVal">—</b></span>
-                    <span class="chart-sub">双方胜率随对局进展变化</span>
+                    <span class="chart-title-main">我方预测胜率 <b id="replayMyVal">—</b></span>
+                    <span class="chart-legend"><i class="dot dot-my"></i>我方 <i class="dot dot-opp"></i>对手</span>
                 </div>
                 <canvas id="replayChart" class="replay-chart-canvas"></canvas>
             </div>
@@ -2951,13 +2951,39 @@
         }
         function boardScore(b, aiColor, oppColor) { return scanScore(b, aiColor) - scanScore(b, oppColor); }
 
-        // 基于局面评分估计某方（color:1=黑 2=白）的获胜概率（0~100），用于回看双方的胜率曲线
+        // 全盘是否已存在五连（color 获胜）
+        function hasFive(b, color) {
+            for (let y = 0; y < BOARD_SIZE; y++) for (let x = 0; x < BOARD_SIZE; x++) {
+                if (b[y][x] === color && isWin(b, x, y, color)) return true;
+            }
+            return false;
+        }
+        // 某方当前能形成的最强一步威胁（全盘空点中 evalAround 最大值）
+        function bestMoveScore(b, color) {
+            let best = 0;
+            for (let y = 0; y < BOARD_SIZE; y++) for (let x = 0; x < BOARD_SIZE; x++) {
+                if (b[y][x] === 0) { const s = evalAround(b, x, y, color); if (s > best) best = s; }
+            }
+            return best;
+        }
+        // 深化模型：基于“最强威胁 + 终局判定”估计某方（color:1=黑 2=白）胜率（0~100）
+        // 1) 已成五连 → 100/0；2) 有一步即胜 → ~99/1；3) 能成活四/冲四威胁 → 接近必胜；
+        // 4) 否则以双方最强威胁之比（log-odds）映射为胜率，开局约 50%，随威胁此消彼长。
         function sideWinProb(b, color) {
             const opp = color === 1 ? 2 : 1;
-            const s = boardScore(b, color, opp);
-            const K = 100000;                       // 缩放系数：活四级(~1e6)→接近100%，开局0→50%
-            const p = 100 / (1 + Math.exp(-s / K));
-            return Math.round(p * 10) / 10;         // 保留一位小数（黑白互补，和恒为 100）
+            if (hasFive(b, color)) return 100;                 // 已经连成五子
+            if (hasFive(b, opp)) return 0;
+            if (findImmediateWin(b, color)) return 99;         // 下一步即可成五（必胜）
+            if (findImmediateWin(b, opp)) return 1;
+            const myBest = bestMoveScore(b, color);
+            const oppBest = bestMoveScore(b, opp);
+            if (myBest >= 100000) return 99;                   // 活四：对方无法同时堵两端
+            if (oppBest >= 100000) return 1;
+            const r = (myBest + 1) / (oppBest + 1);            // 双方最强威胁之比
+            const p = 100 / (1 + Math.exp(-Math.log(r) / 1.6));
+            let v = Math.round(p * 10) / 10;
+            if (v < 0.5) v = 0.5; if (v > 99.5) v = 99.5;       // 留白避免绝对化
+            return v;
         }
 
         // 找到能一步制胜的落子点（针对 color）
@@ -3874,7 +3900,7 @@
         function recordGame(result, mode, opponent) {
             if (!currentUser || isAdminSession(currentUser) || currentUser === 'guest') return;
             const arr = loadGames();
-            arr.unshift({ result: result, mode: mode, opponent: opponent || '—', ts: Date.now(), moves: moveLog.slice() });
+            arr.unshift({ result: result, mode: mode, opponent: opponent || '—', ts: Date.now(), myColor: myColor, moves: moveLog.slice() });
             while (arr.length > 50) arr.pop();
             try { localStorage.setItem(gamesKey(), JSON.stringify(arr)); } catch (e) {}
         }
@@ -3939,11 +3965,23 @@
         let replayMoves = [];
         let replayIdx = 0;       // 已展示到第几手（0 = 空盘）
         let replayTimer = null;
-        let replayCanvas = null, replayCtx = null, replayChartCanvas = null, replayChartCtx = null;
+        let replayCanvas = null, replayCtx = null, replayChartCanvas = null, replayChartCtx = null, replayProbSeries = [], replayMyColor = 1;
         function openReplay(game) {
             if (!game || !game.moves || !game.moves.length) { showToast('该对局暂无回放数据'); return; }
             stopReplayPlay();
             replayMoves = game.moves;
+            replayMyColor = (typeof game.myColor === 'number') ? game.myColor : 1;   // 旧联机记录缺省黑方
+            // 用深化模型逐步重算胜率序列（我方 / 对手），使新旧对局均准确
+            replayProbSeries = [];
+            {
+                const tmpB = Array.from({ length: BOARD_SIZE }, () => Array(BOARD_SIZE).fill(0));
+                const oppC = replayMyColor === 1 ? 2 : 1;
+                replayProbSeries.push({ my: 50, opp: 50 });   // 0 手：均势
+                for (let i = 0; i < replayMoves.length; i++) {
+                    const m = replayMoves[i]; tmpB[m.y][m.x] = m.c;
+                    replayProbSeries.push({ my: sideWinProb(tmpB, replayMyColor), opp: sideWinProb(tmpB, oppC) });
+                }
+            }
             replayIdx = 0;
             replayCanvas = document.getElementById('replayCanvas');
             const dim = PADDING * 2 + (BOARD_SIZE - 1) * CELL;
@@ -3953,7 +3991,7 @@
             replayChartCanvas.width = replayCanvas.width;
             replayChartCanvas.height = 150;
             replayChartCtx = replayChartCanvas.getContext('2d');
-            const hasData = replayMoves.some(m => typeof m.bw === 'number' || typeof m.aiWin === 'number');
+            const hasData = replayMoves.length > 0;   // 有落子即可用深化模型重算胜率
             document.getElementById('replayChartWrap').style.display = hasData ? '' : 'none';
             document.getElementById('replayChartEmpty').style.display = hasData ? 'none' : '';
             const resText = { win: '胜', lose: '负', draw: '平' }[game.result] || '—';
@@ -3995,7 +4033,7 @@
             document.getElementById('replayStep').textContent = replayIdx + ' / ' + replayMoves.length;
             drawReplayChart(replayIdx);
         }
-        // 绘制双方胜率预测折线图（uptoIdx：已回放到的手数）
+        // 绘制“我方预测胜率”折线图（uptoIdx：已回放到的手数）
         function drawReplayChart(uptoIdx) {
             if (!replayChartCtx) return;
             const cv = replayChartCanvas, c = replayChartCtx;
@@ -4012,44 +4050,36 @@
                 c.beginPath(); c.moveTo(padL, y); c.lineTo(W - padR, y); c.stroke();
                 c.fillText(v + '%', 4, y + 3);
             });
+            const myVal = document.getElementById('replayMyVal');
+            const oppVal = document.getElementById('replayOppVal');
             const N = replayMoves.length;
-            // 取一步的 [黑胜率, 白胜率]；兼容旧数据的 aiWin 字段
-            function vals(m) {
-                if (typeof m.bw === 'number' && typeof m.ww === 'number') return [m.bw, m.ww];
-                if (typeof m.aiWin === 'number') return [Math.round((100 - m.aiWin) * 10) / 10, m.aiWin];
-                return null;
-            }
-            const blackVal = document.getElementById('replayBlackVal');
-            const whiteVal = document.getElementById('replayWhiteVal');
-            if (N === 0 || uptoIdx <= 0) { blackVal.textContent = '—'; whiteVal.textContent = '—'; return; }
+            if (N === 0 || uptoIdx <= 0 || !replayProbSeries.length) { myVal.textContent = '—'; oppVal.textContent = '—'; return; }
             const xAt = function (i) { return N <= 1 ? padL + plotW / 2 : padL + plotW * ((i - 1) / (N - 1)); };
             const yAt = function (v) { return padT + plotH * (1 - v / 100); };
-            // 黑方胜率线（深色）
-            c.strokeStyle = '#2b2b2b'; c.lineWidth = 2; c.beginPath();
+            // 我方胜率线（蓝色实线）
+            c.strokeStyle = '#2f6fed'; c.lineWidth = 2.5; c.beginPath();
             let started = false;
             for (let i = 1; i <= uptoIdx; i++) {
-                const v = vals(replayMoves[i - 1]); if (!v) continue;
-                const x = xAt(i), y = yAt(v[0]);
+                const v = replayProbSeries[i].my; const x = xAt(i), y = yAt(v);
                 if (!started) { c.moveTo(x, y); started = true; } else c.lineTo(x, y);
             }
             c.stroke();
-            // 白方胜率线（橙）
-            c.strokeStyle = '#e8743b'; c.lineWidth = 2; c.beginPath();
+            // 对手胜率线（灰色虚线）
+            c.strokeStyle = '#9b9b9b'; c.lineWidth = 2; c.setLineDash([5, 4]); c.beginPath();
             started = false;
             for (let i = 1; i <= uptoIdx; i++) {
-                const v = vals(replayMoves[i - 1]); if (!v) continue;
-                const x = xAt(i), y = yAt(v[1]);
+                const v = replayProbSeries[i].opp; const x = xAt(i), y = yAt(v);
                 if (!started) { c.moveTo(x, y); started = true; } else c.lineTo(x, y);
             }
-            c.stroke();
+            c.stroke(); c.setLineDash([]);
             // 当前手高亮
-            const cur = vals(replayMoves[uptoIdx - 1]);
+            const cur = replayProbSeries[uptoIdx];
             if (cur) {
                 const x = xAt(uptoIdx);
-                c.beginPath(); c.arc(x, yAt(cur[0]), 4.5, 0, Math.PI * 2); c.fillStyle = '#2b2b2b'; c.fill();
-                c.beginPath(); c.arc(x, yAt(cur[1]), 4.5, 0, Math.PI * 2); c.fillStyle = '#e8743b'; c.fill();
-                blackVal.textContent = cur[0].toFixed(1) + '%';
-                whiteVal.textContent = cur[1].toFixed(1) + '%';
+                c.beginPath(); c.arc(x, yAt(cur.my), 4.5, 0, Math.PI * 2); c.fillStyle = '#2f6fed'; c.fill();
+                c.beginPath(); c.arc(x, yAt(cur.opp), 4.5, 0, Math.PI * 2); c.fillStyle = '#9b9b9b'; c.fill();
+                myVal.textContent = cur.my.toFixed(1) + '%';
+                oppVal.textContent = cur.opp.toFixed(1) + '%';
             }
         }
         function replayNext() { if (replayIdx < replayMoves.length) applyReplayTo(replayIdx + 1); }
