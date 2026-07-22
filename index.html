@@ -3004,33 +3004,28 @@
         // 用 AI 策略（优先成五/拦截、次优启发式 + 少量随机探索）模拟对局剩余进程，统计 color 方获胜比例
         function aiRolloutMove(b, mover) {
             const opp = mover === 1 ? 2 : 1;
-            const cands = getCandidates(b, mover, 16);   // 仅相邻候选，速度快
+            // 轻量短路：先用廉价的一步即胜/必拦检测，避免每次都跑昂贵的 getCandidates 全盘扫描
+            const myWin = findImmediateWin(b, mover);
+            if (myWin) return myWin;                 // 自己一步即胜 → 直接走
+            const oppWin = findImmediateWin(b, opp);
+            if (oppWin) return oppWin;               // 对手一步即胜 → 拦截
+            // 否则用候选启发式选点（仅相邻候选）
+            const cands = getCandidates(b, mover, 16);
             if (!cands.length) return null;
-            let winMove = null;
-            const blockMoves = [];
-            for (const c of cands) {
-                b[c.y][c.x] = mover;
-                const w = isWin(b, c.x, c.y, mover);
-                b[c.y][c.x] = 0;
-                if (w) { winMove = c; break; }            // 自己一步即胜 → 直接走
-                b[c.y][c.x] = opp;
-                const ow = isWin(b, c.x, c.y, opp);
-                b[c.y][c.x] = 0;
-                if (ow) blockMoves.push(c);               // 对手下一步能赢 → 需拦截
-            }
-            if (winMove) return winMove;
-            if (blockMoves.length) { blockMoves.sort((a, b) => b.s - a.s); return blockMoves[0]; }
             const top = cands.slice(0, Math.min(4, cands.length));
             if (Math.random() < 0.15) return top[Math.floor(Math.random() * top.length)];
             return top[0];
         }
         // 从 board（color 方轮到走子）出发，模拟 rollouts 局直到终局，返回 color 方胜率 0~100
         function aiPredictWin(board, color, rollouts) {
+            const opp = color === 1 ? 2 : 1;
             let score = 0;
             for (let r = 0; r < rollouts; r++) {
                 const b = board.map(row => row.slice());
                 let empty = 0;
                 for (let y = 0; y < BOARD_SIZE; y++) for (let x = 0; x < BOARD_SIZE; x++) if (b[y][x] === 0) empty++;
+                // 开局方一步即胜 → 必胜，跳过整局模拟（决定性位置直接判定，省时）
+                if (findImmediateWin(b, color)) { score += 1; continue; }
                 let toMove = color, plies = 0, res = 0;
                 while (empty > 0 && plies < BOARD_SIZE * BOARD_SIZE) {
                     const mv = aiRolloutMove(b, toMove);
@@ -4036,7 +4031,7 @@
         let replayIdx = 0;       // 已展示到第几手（0 = 空盘）
         let replayTimer = null;
         let replayCanvas = null, replayCtx = null, replayChartCanvas = null, replayChartCtx = null, replayProbSeries = [], replayMyColor = 1;
-        const REPLAY_ROLLOUTS = 12;   // 回看胜率模拟的蒙特卡洛次数（越多越准、越慢）
+        const REPLAY_ROLLOUTS = 8;    // 回看胜率模拟的蒙特卡洛次数（越多越准、越慢）
         function openReplay(game) {
             if (!game || !game.moves || !game.moves.length) { showToast('该对局暂无回放数据'); return; }
             stopReplayPlay();
