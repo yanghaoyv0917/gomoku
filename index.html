@@ -833,7 +833,7 @@
         }
         .gr-replay-tag.disabled { color: #bbb; background: #f2f2f2; border-color: #ddd; }
         /* ===== 棋局回看弹窗 ===== */
-        .replay-box { max-width: 680px; }
+        .replay-box { max-width: 680px; max-height: 92vh; overflow-y: auto; }
         .replay-canvas { display: block; margin: 8px auto; background: #f0d9b5; border-radius: 8px; max-width: 100%; }
         .replay-meta { text-align: center; color: #8B4513; font-size: 13px; margin: 4px 0 8px; }
         .replay-controls { display: flex; align-items: center; justify-content: center; gap: 10px; margin-top: 10px; flex-wrap: wrap; }
@@ -844,6 +844,12 @@
         }
         .replay-btn:hover { transform: translateY(-1px); filter: brightness(1.03); }
         .replay-play { background: linear-gradient(145deg, #6a4ca0, #9b7fd4); color: #fff; border-color: #5b3f93; }
+        /* 回看：AI 胜率预测折线图 */
+        .replay-chart-wrap { margin-top: 12px; padding: 8px 10px 4px; background: #faf6f0; border: 1px solid #ecdcbf; border-radius: 10px; }
+        .replay-chart-title { font-size: 13px; color: #6a4ca0; font-weight: 600; margin-bottom: 4px; display: flex; justify-content: space-between; }
+        .replay-chart-title span { color: #e8743b; font-weight: 700; }
+        .replay-chart-canvas { display: block; width: 100%; height: 150px; }
+        .replay-chart-empty { text-align: center; color: #aaa; font-size: 13px; padding: 10px; }
         .modal-ok-btn { background: linear-gradient(145deg, #ff9a5a, #e8743b); color: #fff; border: 2px solid #cf6a32; }
         .modal-ok-btn:hover { filter: brightness(1.05); transform: translateY(-2px); }
 
@@ -1428,6 +1434,11 @@
                 <button class="replay-btn" onclick="replayNext()">下一步 ▶</button>
                 <button class="replay-btn replay-play" id="replayPlayBtn" onclick="toggleReplayPlay()">▶ 自动播放</button>
             </div>
+            <div class="replay-chart-wrap" id="replayChartWrap">
+                <div class="replay-chart-title">AI 胜率预测（每一步）<span id="replayWinVal">—</span></div>
+                <canvas id="replayChart" class="replay-chart-canvas"></canvas>
+            </div>
+            <div class="replay-chart-empty" id="replayChartEmpty" style="display:none;">联机对局无 AI 预测数据</div>
             <div class="modal-btn-group">
                 <button class="modal-btn modal-cancel-btn" onclick="closeReplay()">关闭</button>
             </div>
@@ -2458,7 +2469,7 @@
 
             board[y][x] = currentPlayer;
             lastMove = { x, y };
-            moveLog.push({ x: x, y: y, c: currentPlayer }); // 记录落子用于回看
+            moveLog.push({ x: x, y: y, c: currentPlayer, aiWin: (vsAi ? aiWinProb(board) : null) }); // 记录落子用于回看
             drawBoard();
 
             // 发送给对手（人机模式不发送）
@@ -2493,7 +2504,7 @@
         function handleRemoteMove(x, y, player) {
             board[y][x] = player;
             lastMove = { x, y };
-            moveLog.push({ x: x, y: y, c: player }); // 记录落子用于回看
+            moveLog.push({ x: x, y: y, c: player, aiWin: (vsAi ? aiWinProb(board) : null) }); // 记录落子用于回看
             drawBoard();
 
             if (checkWin(x, y, player)) {
@@ -2932,6 +2943,14 @@
         }
         function boardScore(b, aiColor, oppColor) { return scanScore(b, aiColor) - scanScore(b, oppColor); }
 
+        // 基于局面评分估计 AI（执白=2）的获胜概率（0~100），用于回看折线图
+        function aiWinProb(b) {
+            const s = boardScore(b, 2, 1);
+            const K = 100000;                       // 缩放系数：活四级(~1e6)→接近100%，开局0→50%
+            const p = 100 / (1 + Math.exp(-s / K));
+            return Math.round(p * 10) / 10;         // 保留一位小数
+        }
+
         // 找到能一步制胜的落子点（针对 color）
         function findImmediateWin(b, color) {
             for (let y=0;y<BOARD_SIZE;y++) for (let x=0;x<BOARD_SIZE;x++) {
@@ -3077,7 +3096,7 @@
                 }
                 board[mv.y][mv.x] = 2;
                 lastMove = { x: mv.x, y: mv.y };
-                moveLog.push({ x: mv.x, y: mv.y, c: 2 }); // 记录落子用于回看
+                moveLog.push({ x: mv.x, y: mv.y, c: 2, aiWin: (vsAi ? aiWinProb(board) : null) }); // 记录落子用于回看
                 drawBoard();
                 if (checkWin(mv.x, mv.y, 2)) {
                     gameOver = true; gameActive = false;
@@ -3911,7 +3930,7 @@
         let replayMoves = [];
         let replayIdx = 0;       // 已展示到第几手（0 = 空盘）
         let replayTimer = null;
-        let replayCanvas = null, replayCtx = null;
+        let replayCanvas = null, replayCtx = null, replayChartCanvas = null, replayChartCtx = null;
         function openReplay(game) {
             if (!game || !game.moves || !game.moves.length) { showToast('该对局暂无回放数据'); return; }
             stopReplayPlay();
@@ -3921,6 +3940,13 @@
             const dim = PADDING * 2 + (BOARD_SIZE - 1) * CELL;
             replayCanvas.width = dim; replayCanvas.height = dim;
             replayCtx = replayCanvas.getContext('2d');
+            replayChartCanvas = document.getElementById('replayChart');
+            replayChartCanvas.width = replayCanvas.width;
+            replayChartCanvas.height = 150;
+            replayChartCtx = replayChartCanvas.getContext('2d');
+            const hasAi = replayMoves.some(m => typeof m.aiWin === 'number');
+            document.getElementById('replayChartWrap').style.display = hasAi ? '' : 'none';
+            document.getElementById('replayChartEmpty').style.display = hasAi ? 'none' : '';
             const resText = { win: '胜', lose: '负', draw: '平' }[game.result] || '—';
             document.getElementById('replayMeta').textContent =
                 (game.mode === 'ai' ? '人机' : '联机') + ' · 对手 ' + (game.opponent || '—') + ' · 结果 ' + resText;
@@ -3958,6 +3984,53 @@
             for (let i = 0; i < idx; i++) { const m = replayMoves[i]; replayBoard[m.y][m.x] = m.c; }
             drawReplayBoard();
             document.getElementById('replayStep').textContent = replayIdx + ' / ' + replayMoves.length;
+            drawReplayChart(replayIdx);
+        }
+        // 绘制 AI 胜率预测折线图（uptoIdx：已回放到的手数）
+        function drawReplayChart(uptoIdx) {
+            if (!replayChartCtx) return;
+            const cv = replayChartCanvas, c = replayChartCtx;
+            const W = cv.width, H = cv.height;
+            c.clearRect(0, 0, W, H);
+            c.fillStyle = '#faf6f0'; c.fillRect(0, 0, W, H);
+            const padL = 34, padR = 12, padT = 12, padB = 18;
+            const plotW = W - padL - padR, plotH = H - padT - padB;
+            // 网格线 0 / 50 / 100
+            c.strokeStyle = '#e6d3b3'; c.lineWidth = 1;
+            c.fillStyle = '#a07b4a'; c.font = '10px sans-serif';
+            [0, 50, 100].forEach(function (v) {
+                const y = padT + plotH * (1 - v / 100);
+                c.beginPath(); c.moveTo(padL, y); c.lineTo(W - padR, y); c.stroke();
+                c.fillText(v + '%', 4, y + 3);
+            });
+            const N = replayMoves.length;
+            if (N === 0 || uptoIdx <= 0) { document.getElementById('replayWinVal').textContent = '—'; return; }
+            const xAt = function (i) { return N <= 1 ? padL + plotW / 2 : padL + plotW * ((i - 1) / (N - 1)); };
+            const yAt = function (v) { return padT + plotH * (1 - v / 100); };
+            // 折线
+            c.strokeStyle = '#6a4ca0'; c.lineWidth = 2; c.beginPath();
+            let started = false;
+            for (let i = 1; i <= uptoIdx; i++) {
+                const mv = replayMoves[i - 1];
+                if (typeof mv.aiWin !== 'number') continue;
+                const x = xAt(i), y = yAt(mv.aiWin);
+                if (!started) { c.moveTo(x, y); started = true; } else c.lineTo(x, y);
+            }
+            c.stroke();
+            // 数据点（当前手高亮）
+            for (let i = 1; i <= uptoIdx; i++) {
+                const mv = replayMoves[i - 1];
+                if (typeof mv.aiWin !== 'number') continue;
+                const x = xAt(i), y = yAt(mv.aiWin);
+                const isCur = (i === uptoIdx);
+                c.beginPath(); c.arc(x, y, isCur ? 5 : 3, 0, Math.PI * 2);
+                c.fillStyle = isCur ? '#e8743b' : '#6a4ca0';
+                c.fill();
+            }
+            const cur = replayMoves[uptoIdx - 1];
+            if (cur && typeof cur.aiWin === 'number') {
+                document.getElementById('replayWinVal').textContent = cur.aiWin.toFixed(1) + '%';
+            }
         }
         function replayNext() { if (replayIdx < replayMoves.length) applyReplayTo(replayIdx + 1); }
         function replayPrev() { if (replayIdx > 0) applyReplayTo(replayIdx - 1); }
