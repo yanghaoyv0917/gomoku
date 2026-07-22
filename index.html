@@ -845,6 +845,78 @@
         .leave-room-btn { background: transparent; color: #c44; border-color: #c44; }
         .leave-room-btn:hover { background: rgba(204,68,68,0.08); transform: translateX(-3px); }
 
+        /* ===== 房间内聊天室 ===== */
+        .chat-panel {
+            width: 360px;
+            max-width: 92%;
+            margin: 24px auto 10px;
+            background: rgba(255, 251, 240, 0.92);
+            border: 2px solid #d9b38c;
+            border-radius: 14px;
+            box-shadow: 0 6px 18px rgba(139, 69, 19, 0.15);
+            overflow: hidden;
+            font-family: 'Microsoft YaHei', sans-serif;
+        }
+        .chat-header {
+            padding: 10px 16px;
+            font-size: 16px;
+            font-weight: bold;
+            color: #5c3a1e;
+            background: linear-gradient(145deg, #f3d9b1, #e7c39a);
+            border-bottom: 1px solid #d9b38c;
+        }
+        .chat-sub { font-size: 12px; font-weight: normal; color: #8B4513; opacity: 0.7; margin-left: 6px; }
+        .chat-messages {
+            height: 220px;
+            overflow-y: auto;
+            padding: 12px 14px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            background: #fffdf8;
+        }
+        .chat-msg { max-width: 80%; display: flex; flex-direction: column; }
+        .chat-msg .chat-meta { font-size: 11px; color: #a07a52; margin: 0 4px 2px; }
+        .chat-msg .chat-bubble {
+            padding: 7px 12px;
+            border-radius: 12px;
+            font-size: 14px;
+            line-height: 1.4;
+            word-break: break-word;
+            white-space: pre-wrap;
+        }
+        .chat-msg.other { align-self: flex-start; }
+        .chat-msg.other .chat-bubble { background: #eee3d2; color: #4a3219; border-top-left-radius: 3px; }
+        .chat-msg.self { align-self: flex-end; align-items: flex-end; }
+        .chat-msg.self .chat-bubble { background: linear-gradient(145deg, #8fcf8f, #6fb86f); color: #fff; border-top-right-radius: 3px; }
+        .chat-msg.system { align-self: center; max-width: 90%; }
+        .chat-msg.system .chat-bubble { background: transparent; color: #b08; font-size: 12px; opacity: 0.8; font-style: italic; }
+        .chat-input-row { display: flex; gap: 8px; padding: 10px 12px; border-top: 1px solid #e7d3b8; background: #fffdf8; }
+        .chat-input {
+            flex: 1;
+            padding: 9px 12px;
+            font-size: 14px;
+            border: 1.5px solid #d9b38c;
+            border-radius: 8px;
+            outline: none;
+            font-family: 'Microsoft YaHei', sans-serif;
+        }
+        .chat-input:focus { border-color: #8B4513; }
+        .chat-send-btn {
+            padding: 9px 18px;
+            font-size: 14px;
+            border: none;
+            border-radius: 8px;
+            background: linear-gradient(145deg, #8B4513, #a0522d);
+            color: #fff;
+            cursor: pointer;
+            font-family: 'Microsoft YaHei', sans-serif;
+            letter-spacing: 1px;
+            transition: transform 0.2s ease;
+        }
+        .chat-send-btn:hover { transform: translateY(-1px); }
+        .chat-send-btn:active { transform: translateY(1px); }
+
         /* ===== 飘屏弹窗 ===== */
         .toast {
             position: fixed;
@@ -1172,6 +1244,17 @@
             <div class="room-actions">
                 <button class="room-action-btn copy-room-btn" onclick="copyRoomNumber()">📋 复制房间号</button>
                 <button class="room-action-btn leave-room-btn" onclick="leaveRoom()">🚪 离开房间</button>
+            </div>
+
+            <!-- 房间内聊天室 -->
+            <div class="chat-panel" id="chatPanel">
+                <div class="chat-header">💬 房间聊天<span class="chat-sub">（仅房内两人可见）</span></div>
+                <div class="chat-messages" id="chatMessages"></div>
+                <div class="chat-input-row">
+                    <input type="text" id="chatInput" class="chat-input" placeholder="说点什么..." maxlength="200" autocomplete="off"
+                        onkeydown="if(event.key==='Enter'){sendChat();}">
+                    <button class="chat-send-btn" onclick="sendChat()">发送</button>
+                </div>
             </div>
         </div>
     </div>
@@ -1703,6 +1786,7 @@
                             myColor = hostIsBlack ? 1 : 2;
                             assignPlayerNames(hostIsBlack, myNickname, msg.nickname);
                             startGame();
+                            if (!chatJoinedHint) { chatJoinedHint = true; appendChat('对方已进入房间', null, false, true); }
                             publishRoomState('playing'); // 更新大厅中本房间的状态/黑白方
                         }
                         // 不论首次还是重连，都向客人下发 start（客人收到后不重置棋盘）
@@ -1723,6 +1807,7 @@
                         myColor = hostIsBlack ? 2 : 1;
                         assignPlayerNames(hostIsBlack, msg.host.nickname, msg.guest.nickname);
                         if (!gameActive) startGame();
+                        if (!chatJoinedHint) { chatJoinedHint = true; appendChat('已加入房间，开始聊天吧～', null, false, true); }
                     }
                     break;
                 case 'move':
@@ -1737,6 +1822,9 @@
                     break;
                 case 'timeout':
                     endByTimeout(msg.loser);
+                    break;
+                case 'chat':
+                    if (msg.text) appendChat(msg.text, msg.nickname, false);
                     break;
             }
         }
@@ -1799,6 +1887,10 @@
 
                 case 'timeout':
                     endByTimeout(msg.loser);
+                    break;
+
+                case 'chat':
+                    if (msg.text) appendChat(msg.text, msg.nickname, false);
                     break;
             }
         }
@@ -1903,6 +1995,58 @@
             }
         }
 
+        // ===== 房间内聊天室 =====
+        let chatJoinedHint = false; // 防止重连重复刷「进入房间」系统消息
+        function appendChat(text, metaNick, isSelf, isSystem) {
+            const box = document.getElementById('chatMessages');
+            if (!box) return;
+            const div = document.createElement('div');
+            if (isSystem) {
+                div.className = 'chat-msg system';
+                const b = document.createElement('div');
+                b.className = 'chat-bubble';
+                b.textContent = text;
+                div.appendChild(b);
+            } else {
+                div.className = 'chat-msg ' + (isSelf ? 'self' : 'other');
+                const meta = document.createElement('div');
+                meta.className = 'chat-meta';
+                meta.textContent = metaNick || (isSelf ? '我' : '对方');
+                const b = document.createElement('div');
+                b.className = 'chat-bubble';
+                b.textContent = text;
+                div.appendChild(meta);
+                div.appendChild(b);
+            }
+            box.appendChild(div);
+            box.scrollTop = box.scrollHeight;
+        }
+
+        function sendChat() {
+            const input = document.getElementById('chatInput');
+            if (!input) return;
+            const text = input.value.trim();
+            if (!text) return;
+            if (!currentRoom.key) { showToast('尚未进入房间，无法发送'); return; }
+            const payload = {
+                type: 'chat',
+                text: text,
+                from: myId,
+                nickname: myNickname,
+                avatar: myAvatar,
+                t: Date.now()
+            };
+            sendData(payload);          // 通过当前中继（MQTT 或 WS）发给房内对手
+            appendChat(text, '我', true); // 本地立即显示（对方收到是另一条）
+            input.value = '';
+        }
+
+        function clearChat() {
+            const box = document.getElementById('chatMessages');
+            if (box) box.innerHTML = '';
+        }
+
+
         /**
          * 对手离开处理
          */
@@ -1917,6 +2061,8 @@
             gameActive = false;
             gameOver = true;
             stopMoveTimer();
+            chatJoinedHint = false; // 对方离开后若重连，需重新提示「进入房间」
+            appendChat('对手离开了房间', null, false, true);
             showToast('对手离开了房间');
             updateWaitingText('对手已离开');
             setTimeout(() => {
@@ -2770,6 +2916,8 @@
             clearJoinWatchdog();
             stopMoveTimer();
             cleanupRelay();
+            clearChat();          // 离开房间清空聊天记录
+            chatJoinedHint = false;
             inLobby = false;
             lobbyRooms = {};
             currentRoom = { number: null, key: null, isPrivate: false, password: '', hostNickname: null, guestNickname: null, hostAvatar: null, guestAvatar: null };
@@ -2820,6 +2968,8 @@
                 stopMoveTimer();
                 sendData({ type: 'leave' });
                 cleanupRelay();
+                clearChat();
+                chatJoinedHint = false;
                 goBack();
             }
         }
