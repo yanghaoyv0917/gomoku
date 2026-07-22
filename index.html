@@ -1319,6 +1319,7 @@
         let vsAi = false;           // 是否人机对战模式
         let aiDifficulty = 1;       // 当前 AI 难度（1~9）
         let aiThinkingTimer = null; // AI 思考延时定时器
+        let lastMove = null;        // 最近一步落子坐标 {x, y}，用于绿色边框标记
 
         // ===== DOM 引用 =====
         const canvas = document.getElementById('board');
@@ -1915,6 +1916,7 @@
             currentPlayer = 1; // 黑方先手
             gameActive = true;
             gameOver = false;
+            lastMove = null;
         }
 
         /**
@@ -1942,6 +1944,7 @@
             }
 
             board[y][x] = currentPlayer;
+            lastMove = { x, y };
             drawBoard();
 
             // 发送给对手（人机模式不发送）
@@ -1973,6 +1976,7 @@
          */
         function handleRemoteMove(x, y, player) {
             board[y][x] = player;
+            lastMove = { x, y };
             drawBoard();
 
             if (checkWin(x, y, player)) {
@@ -2076,7 +2080,8 @@
             for (let y = 0; y < BOARD_SIZE; y++) {
                 for (let x = 0; x < BOARD_SIZE; x++) {
                     if (board[y][x] !== 0) {
-                        drawPiece(x, y, board[y][x]);
+                        const isLast = lastMove && lastMove.x === x && lastMove.y === y;
+                        drawPiece(x, y, board[y][x], isLast);
                     }
                 }
             }
@@ -2085,7 +2090,7 @@
         /**
          * 绘制单颗棋子（用玩家头像替代黑白棋图案）
          */
-        function drawPiece(x, y, color) {
+        function drawPiece(x, y, color, isLast) {
             const cx = PADDING + x * CELL;
             const cy = PADDING + y * CELL;
             const r = CELL / 2 - 3;
@@ -2114,6 +2119,15 @@
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'middle';
                 ctx.fillText(a, cx, cy + 1);
+            }
+
+            // 上一步棋子：绿色发光边框标记
+            if (isLast) {
+                ctx.beginPath();
+                ctx.arc(cx, cy, r + 2, 0, Math.PI * 2);
+                ctx.strokeStyle = '#2ecc40';
+                ctx.lineWidth = 3;
+                ctx.stroke();
             }
         }
 
@@ -2473,6 +2487,7 @@
                     return;
                 }
                 board[mv.y][mv.x] = 2;
+                lastMove = { x: mv.x, y: mv.y };
                 drawBoard();
                 if (checkWin(mv.x, mv.y, 2)) {
                     gameOver = true; gameActive = false;
