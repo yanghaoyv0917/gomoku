@@ -855,6 +855,7 @@
         .dot-opp { background: #9b9b9b; }
         .replay-chart-canvas { display: block; width: 100%; height: 150px; }
         .replay-chart-empty { text-align: center; color: #aaa; font-size: 13px; padding: 10px; }
+        .replay-chart-loading { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; color: #6a4ca0; font-size: 13px; background: rgba(250,246,240,0.8); border-radius: 6px; }
         .modal-ok-btn { background: linear-gradient(145deg, #ff9a5a, #e8743b); color: #fff; border: 2px solid #cf6a32; }
         .modal-ok-btn:hover { filter: brightness(1.05); transform: translateY(-2px); }
 
@@ -1441,10 +1442,11 @@
             </div>
             <div class="replay-chart-wrap" id="replayChartWrap">
                 <div class="replay-chart-title">
-                    <span class="chart-title-main">我方预测胜率 <b id="replayMyVal">—</b></span>
+                    <span class="chart-title-main">AI预测胜率 <b id="replayMyVal">—</b><span class="chart-sub">（蒙特卡洛模拟）</span></span>
                     <span class="chart-legend"><i class="dot dot-my"></i>我方 <i class="dot dot-opp"></i>对手</span>
                 </div>
                 <canvas id="replayChart" class="replay-chart-canvas"></canvas>
+                <div class="replay-chart-loading" id="replayChartLoading" style="display:none;"></div>
             </div>
             <div class="replay-chart-empty" id="replayChartEmpty" style="display:none;">该对局无胜率预测数据</div>
             <div class="modal-btn-group">
@@ -2998,6 +3000,74 @@
             return null;
         }
 
+        // ===== 蒙特卡洛模拟深化胜率模型 =====
+        // 用 AI 策略（优先成五/拦截、次优启发式 + 少量随机探索）模拟对局剩余进程，统计 color 方获胜比例
+        function aiRolloutMove(b, mover) {
+            const opp = mover === 1 ? 2 : 1;
+            const cands = getCandidates(b, mover, 16);   // 仅相邻候选，速度快
+            if (!cands.length) return null;
+            let winMove = null;
+            const blockMoves = [];
+            for (const c of cands) {
+                b[c.y][c.x] = mover;
+                const w = isWin(b, c.x, c.y, mover);
+                b[c.y][c.x] = 0;
+                if (w) { winMove = c; break; }            // 自己一步即胜 → 直接走
+                b[c.y][c.x] = opp;
+                const ow = isWin(b, c.x, c.y, opp);
+                b[c.y][c.x] = 0;
+                if (ow) blockMoves.push(c);               // 对手下一步能赢 → 需拦截
+            }
+            if (winMove) return winMove;
+            if (blockMoves.length) { blockMoves.sort((a, b) => b.s - a.s); return blockMoves[0]; }
+            const top = cands.slice(0, Math.min(4, cands.length));
+            if (Math.random() < 0.15) return top[Math.floor(Math.random() * top.length)];
+            return top[0];
+        }
+        // 从 board（color 方轮到走子）出发，模拟 rollouts 局直到终局，返回 color 方胜率 0~100
+        function aiPredictWin(board, color, rollouts) {
+            let score = 0;
+            for (let r = 0; r < rollouts; r++) {
+                const b = board.map(row => row.slice());
+                let empty = 0;
+                for (let y = 0; y < BOARD_SIZE; y++) for (let x = 0; x < BOARD_SIZE; x++) if (b[y][x] === 0) empty++;
+                let toMove = color, plies = 0, res = 0;
+                while (empty > 0 && plies < BOARD_SIZE * BOARD_SIZE) {
+                    const mv = aiRolloutMove(b, toMove);
+                    if (!mv) break;
+                    b[mv.y][mv.x] = toMove; empty--;
+                    if (isWin(b, mv.x, mv.y, toMove)) { res = (toMove === color) ? 1 : -1; break; }
+                    toMove = toMove === 1 ? 2 : 1; plies++;
+                }
+                score += (res === 1) ? 1 : (res === 0 ? 0.5 : 0);   // 和棋记 0.5
+            }
+            return score / rollouts * 100;
+        }
+        // 构建每一步结束后的棋盘快照（用于回看逐步重算胜率）
+        function buildStepBoards(moves) {
+            const boards = [Array.from({ length: BOARD_SIZE }, () => Array(BOARD_SIZE).fill(0))];
+            const b = Array.from({ length: BOARD_SIZE }, () => Array(BOARD_SIZE).fill(0));
+            for (const m of moves) { b[m.y][m.x] = m.c; boards.push(b.map(r => r.slice())); }
+            return boards;
+        }
+        // 分块计算胜率序列（避免卡 UI），逐手 setTimeout 让出主线程，完成后回调 onDone(series)
+        function computeReplaySeries(boards, myColor, rollouts, onProgress, onDone) {
+            const series = [{ my: 50, opp: 50 }];
+            let i = 1;
+            function step() {
+                if (i < boards.length) {
+                    const w = aiPredictWin(boards[i], myColor, rollouts);
+                    series.push({ my: Math.round(w * 10) / 10, opp: Math.round((100 - w) * 10) / 10 });
+                    i++;
+                    onProgress(i, boards.length);
+                    setTimeout(step, 0);
+                } else {
+                    onDone(series);
+                }
+            }
+            step();
+        }
+
         // 纯随机落子（仅“入门”难度使用）
         function randomMove(b) {
             const cells = [];
@@ -3966,22 +4036,20 @@
         let replayIdx = 0;       // 已展示到第几手（0 = 空盘）
         let replayTimer = null;
         let replayCanvas = null, replayCtx = null, replayChartCanvas = null, replayChartCtx = null, replayProbSeries = [], replayMyColor = 1;
+        const REPLAY_ROLLOUTS = 12;   // 回看胜率模拟的蒙特卡洛次数（越多越准、越慢）
         function openReplay(game) {
             if (!game || !game.moves || !game.moves.length) { showToast('该对局暂无回放数据'); return; }
             stopReplayPlay();
             replayMoves = game.moves;
             replayMyColor = (typeof game.myColor === 'number') ? game.myColor : 1;   // 旧联机记录缺省黑方
-            // 用深化模型逐步重算胜率序列（我方 / 对手），使新旧对局均准确
-            replayProbSeries = [];
-            {
-                const tmpB = Array.from({ length: BOARD_SIZE }, () => Array(BOARD_SIZE).fill(0));
-                const oppC = replayMyColor === 1 ? 2 : 1;
-                replayProbSeries.push({ my: 50, opp: 50 });   // 0 手：均势
-                for (let i = 0; i < replayMoves.length; i++) {
-                    const m = replayMoves[i]; tmpB[m.y][m.x] = m.c;
-                    replayProbSeries.push({ my: sideWinProb(tmpB, replayMyColor), opp: sideWinProb(tmpB, oppC) });
-                }
-            }
+            // 用 AI 蒙特卡洛模拟逐步重算胜率序列（我方 / 对手），使新旧对局均准确
+            replayProbSeries = [{ my: 50, opp: 50 }];
+            const stepBoards = buildStepBoards(replayMoves);
+            const loadingEl = document.getElementById('replayChartLoading');
+            document.getElementById('replayChartWrap').style.display = '';
+            document.getElementById('replayChartEmpty').style.display = 'none';
+            loadingEl.style.display = 'flex';
+            loadingEl.textContent = 'AI 模拟棋局中… 0/' + replayMoves.length;
             replayIdx = 0;
             replayCanvas = document.getElementById('replayCanvas');
             const dim = PADDING * 2 + (BOARD_SIZE - 1) * CELL;
@@ -3991,14 +4059,15 @@
             replayChartCanvas.width = replayCanvas.width;
             replayChartCanvas.height = 150;
             replayChartCtx = replayChartCanvas.getContext('2d');
-            const hasData = replayMoves.length > 0;   // 有落子即可用深化模型重算胜率
-            document.getElementById('replayChartWrap').style.display = hasData ? '' : 'none';
-            document.getElementById('replayChartEmpty').style.display = hasData ? 'none' : '';
             const resText = { win: '胜', lose: '负', draw: '平' }[game.result] || '—';
             document.getElementById('replayMeta').textContent =
                 (game.mode === 'ai' ? '人机' : '联机') + ' · 对手 ' + (game.opponent || '—') + ' · 结果 ' + resText;
             document.getElementById('replayModal').classList.add('active');
             applyReplayTo(0);
+            // 分块 AI 模拟，避免阻塞 UI；完成后用完整序列重绘图表
+            computeReplaySeries(stepBoards, replayMyColor, REPLAY_ROLLOUTS,
+                function (done, total) { loadingEl.textContent = 'AI 模拟棋局中… ' + done + '/' + total; },
+                function (series) { replayProbSeries = series; loadingEl.style.display = 'none'; drawReplayChart(replayIdx); });
         }
         function drawReplayBoard() {
             const c = replayCtx, dim = replayCanvas.width;
@@ -4033,9 +4102,10 @@
             document.getElementById('replayStep').textContent = replayIdx + ' / ' + replayMoves.length;
             drawReplayChart(replayIdx);
         }
-        // 绘制“我方预测胜率”折线图（uptoIdx：已回放到的手数）
+        // 绘制“AI预测胜率”折线图（uptoIdx：已回放到的手数）
         function drawReplayChart(uptoIdx) {
             if (!replayChartCtx) return;
+            uptoIdx = Math.min(uptoIdx, replayProbSeries.length - 1);   // 模拟未完成时钳制，避免越界
             const cv = replayChartCanvas, c = replayChartCtx;
             const W = cv.width, H = cv.height;
             c.clearRect(0, 0, W, H);
