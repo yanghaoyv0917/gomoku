@@ -917,6 +917,23 @@
         .chat-send-btn:hover { transform: translateY(-1px); }
         .chat-send-btn:active { transform: translateY(1px); }
 
+        /* ===== 房间内在线状态监测 ===== */
+        .room-presence {
+            width: 360px;
+            max-width: 92%;
+            margin: 6px auto 0;
+            padding: 8px 14px;
+            font-size: 14px;
+            color: #5c3a1e;
+            background: rgba(255, 251, 240, 0.9);
+            border: 1px solid #e7d3b8;
+            border-radius: 10px;
+            text-align: center;
+            font-family: 'Microsoft YaHei', sans-serif;
+        }
+        .online-dot { color: #2e9e4f; font-weight: bold; }
+        .offline-dot { color: #b0b0b0; font-weight: bold; }
+
         /* ===== 飘屏弹窗 ===== */
         .toast {
             position: fixed;
@@ -1226,6 +1243,8 @@
 
             <p class="room-hint">请将此房间号分享给对手，等待对方加入</p>
 
+            <div class="room-presence" id="peerStatus"></div>
+
             <!-- 棋盘区域（游戏开始后显示） -->
             <div class="board-section" id="boardSection">
                 <canvas id="board" width="620" height="620"></canvas>
@@ -1420,6 +1439,17 @@
         let moveDeadline = 0;        // 当前回合截止时间戳（ms）
         let lastMove = null;        // 最近一步落子坐标 {x, y}，用于绿色边框标记
 
+        // ===== 房间存活 / 在线状态监测 =====
+        const ROOM_TTL = 20000;            // 大厅房间存活时间：超过该时间未刷新心跳则视为已解散（仅 MQTT 模式生效）
+        const PRESENCE_INTERVAL = 4000;    // 房间内在线心跳间隔（ms）
+        const PRESENCE_TTL = 12000;        // 超过该时间未收到对方心跳则判定对方离线
+        const ROOM_DISSOLVE_AFTER = 30000; // 房主检测到客人长时间离线后自动解散房间的阈值（ms）
+        let roomHeartbeatTimer = null;     // 大厅房间心跳（仅房主持有）
+        let presenceTimer = null;          // 在线状态心跳定时器
+        let presenceMonitorTimer = null;   // 在线状态监测定时器
+        let presence = { host: 0, guest: 0 }; // 各角色最近一次心跳时间戳
+        let currentRoomStatus = 'waiting'; // 当前房间在大厅的状态（waiting/playing/finished）
+
         // ===== DOM 引用 =====
         const canvas = document.getElementById('board');
         const ctx = canvas.getContext('2d');
@@ -1609,11 +1639,17 @@
 
         // 房间主题订阅成功后的对局接入逻辑（房主/客人共用）
         function afterRoomConnect() {
+            // 进入房间即启动在线状态心跳与监测（双方）
+            startPresence();
+            startPresenceMonitor();
+            updatePeerStatus();
             if (myRole === 'host') {
+                startRoomHeartbeat(); // 房主持有大厅房间心跳
                 showSelfCard(myNickname, myAvatar, '房主');
                 updateWaitingText('⏳ 等待对手加入房间...');
-                // 房主重连后：若对局已就绪，重新下发 start（不重置棋盘）
+                // 房主重连后：若对局已就绪，重新下发 start 并刷新大厅房间状态
                 if (roomReady) {
+                    publishRoomState(currentRoomStatus); // 刷新大厅存活时间戳
                     mqttPublish({ type: 'start', hostIsBlack: (myColor === 1),
                         host: { nickname: myNickname, avatar: myAvatar },
                         guest: { nickname: currentRoom.guestNickname, avatar: currentRoom.guestAvatar } });
@@ -1694,7 +1730,12 @@
             const list = document.getElementById('roomList');
             const empty = document.getElementById('lobbyEmpty');
             if (!list) return;
-            const rooms = Object.values(lobbyRooms);
+            const rooms = Object.values(lobbyRooms).filter(r => {
+                // 仅 MQTT 模式按心跳时间戳过滤：超过 ROOM_TTL 未刷新视为已解散（无人在线）
+                if (netMode !== 'mqtt') return true;
+                const la = r.lastActive || 0;
+                return (Date.now() - la) <= ROOM_TTL;
+            });
             if (!rooms.length) {
                 list.innerHTML = '';
                 if (empty) empty.style.display = 'block';
@@ -1732,6 +1773,7 @@
 
         // 房主建房/状态变更时发布房间广播（仅 MQTT 模式；WS 中继由服务器统一广播）
         function publishRoomState(status) {
+            currentRoomStatus = status; // 记录当前状态，供心跳持续刷新
             if (netMode !== 'mqtt' || !mqttClient || !mqttClient.connected || !currentRoom.number) return;
             if (myRole !== 'host') return;
             const hostName = currentRoom.hostNickname || myNickname;
@@ -1746,7 +1788,8 @@
                 status: status,
                 players: currentRoom.guestNickname ? [hostName, currentRoom.guestNickname] : [hostName],
                 black: black || null,
-                white: white || null
+                white: white || null,
+                lastActive: Date.now() // 大厅存活心跳时间戳
             };
             mqttClient.publish('gomoku/lobby/' + currentRoom.number,
                 JSON.stringify(announce), { qos: 1, retain: true });
@@ -1758,6 +1801,91 @@
                 try { mqttClient.publish('gomoku/lobby/' + currentRoom.number, '', { qos: 1, retain: true }); } catch (e) {}
             }
         }
+
+        // ===== 房间存活心跳 + 在线状态监测 =====
+        // 房主周期性刷新大厅房间广播（带 lastActive），使房间保持「有人在线」；
+        // 一旦房主离线且不再刷新，超过 ROOM_TTL 后大厅自动过滤掉该房间（即解散）。
+        function startRoomHeartbeat() {
+            if (roomHeartbeatTimer) return;
+            if (myRole !== 'host') return;
+            roomHeartbeatTimer = setInterval(() => {
+                if (netMode === 'mqtt' && mqttClient && mqttClient.connected && currentRoom.number) {
+                    publishRoomState(currentRoomStatus);
+                }
+            }, 6000);
+        }
+        function stopRoomHeartbeat() {
+            if (roomHeartbeatTimer) { clearInterval(roomHeartbeatTimer); roomHeartbeatTimer = null; }
+        }
+
+        // 在线状态心跳：双方定时互发 presence，用于实时判断对方是否在线
+        function startPresence() {
+            if (presenceTimer) return;
+            presenceTimer = setInterval(() => {
+                if (!currentRoom.key) return;
+                sendData({ type: 'presence', role: myRole, t: Date.now() });
+                updatePeerStatus();
+            }, PRESENCE_INTERVAL);
+        }
+        function stopPresence() {
+            if (presenceTimer) { clearInterval(presenceTimer); presenceTimer = null; }
+        }
+
+        // 在线状态监测：检测对方是否离线；房主在对方长时间离线时自动解散房间
+        function startPresenceMonitor() {
+            if (presenceMonitorTimer) return;
+            presenceMonitorTimer = setInterval(presenceMonitorTick, 3000);
+        }
+        function stopPresenceMonitor() {
+            if (presenceMonitorTimer) { clearInterval(presenceMonitorTimer); presenceMonitorTimer = null; }
+        }
+        function presenceMonitorTick() {
+            updatePeerStatus();
+            if (!currentRoom.key) return;
+            const now = Date.now();
+            const peerRole = (myRole === 'host') ? 'guest' : 'host';
+            const peerLast = presence[peerRole] || 0;
+            const peerOffline = (now - peerLast) > PRESENCE_TTL;
+            if (!peerOffline) return;
+            if (myRole === 'host') {
+                // 对局进行中不强行解散，避免误判瞬时抖动
+                if (currentRoomStatus === 'playing') return;
+                // 尚无客人加入（等待中）时不解散——房主本人仍在线，房间仍有效
+                if (!currentRoom.guestNickname) return;
+                dissolveRoom('对手已离线，房间自动解散');
+            } else {
+                // 客人：房主离线后房间在大厅心跳中已过期，本地返回大厅
+                showToast('房主已离线，房间已解散');
+                cleanupRelay();
+                goBack();
+            }
+        }
+
+        // 自动解散房间：停止心跳/监测，清除大厅广播并通知对手后返回大厅
+        function dissolveRoom(reason) {
+            stopRoomHeartbeat();
+            stopPresence();
+            stopPresenceMonitor();
+            showToast(reason || '房间已自动解散');
+            cleanupRelay();
+            goBack();
+        }
+
+        // 更新房间内「对手在线/离线」状态显示
+        function updatePeerStatus() {
+            const el = document.getElementById('peerStatus');
+            if (!el) return;
+            if (!currentRoom.key) { el.textContent = ''; return; }
+            const now = Date.now();
+            const peerRole = (myRole === 'host') ? 'guest' : 'host';
+            const peerLast = presence[peerRole] || 0;
+            const online = (now - peerLast) <= PRESENCE_TTL;
+            const label = (myRole === 'host') ? '客人' : '房主';
+            el.innerHTML = '对手（' + label + '）状态：' + (online
+                ? '<span class="online-dot">● 在线</span>'
+                : '<span class="offline-dot">○ 离线</span>');
+        }
+
 
         function escapeHtml(s) {
             return String(s == null ? '' : s).replace(/[&<>"']/g, c =>
@@ -1823,6 +1951,9 @@
                 case 'timeout':
                     endByTimeout(msg.loser);
                     break;
+                case 'presence':
+                    if (msg.role) { presence[msg.role] = msg.t || Date.now(); updatePeerStatus(); }
+                    break;
                 case 'chat':
                     if (msg.text) appendChat(msg.text, msg.nickname, false);
                     break;
@@ -1887,6 +2018,10 @@
 
                 case 'timeout':
                     endByTimeout(msg.loser);
+                    break;
+
+                case 'presence':
+                    if (msg.role) { presence[msg.role] = msg.t || Date.now(); updatePeerStatus(); }
                     break;
 
                 case 'chat':
@@ -2096,6 +2231,10 @@
             lobbySubscribed = false;
             netMode = null;
             roomReady = false;
+            // 停止房间存活心跳与在线状态监测
+            stopRoomHeartbeat();
+            stopPresence();
+            stopPresenceMonitor();
         }
 
         // =====================================================
@@ -2918,6 +3057,9 @@
             cleanupRelay();
             clearChat();          // 离开房间清空聊天记录
             chatJoinedHint = false;
+            presence = { host: 0, guest: 0 }; // 重置在线状态
+            currentRoomStatus = 'waiting';
+            updatePeerStatus();
             inLobby = false;
             lobbyRooms = {};
             currentRoom = { number: null, key: null, isPrivate: false, password: '', hostNickname: null, guestNickname: null, hostAvatar: null, guestAvatar: null };
