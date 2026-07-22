@@ -3034,7 +3034,8 @@
                 // 开局方一步即胜 → 必胜，跳过整局模拟（决定性位置直接判定，省时）
                 if (findImmediateWin(b, color)) { score += 1; continue; }
                 let toMove = color, plies = 0, res = 0;
-                while (empty > 0 && plies < BOARD_SIZE * BOARD_SIZE) {
+                // 单局模拟步数上限（REPLAY_MAX_PLIES）：防止极端长局拖慢，超时未分胜负按和棋计
+                while (empty > 0 && plies < REPLAY_MAX_PLIES) {
                     const mv = aiRolloutMove(b, toMove);
                     if (!mv) break;
                     b[mv.y][mv.x] = toMove; empty--;
@@ -3055,10 +3056,28 @@
         // 分块计算胜率序列（避免卡 UI），逐手 setTimeout 让出主线程，完成后回调 onDone(series)
         function computeReplaySeries(boards, myColor, rollouts, onProgress, onDone) {
             const series = [{ my: 50, opp: 50 }];
+            const oppColor = myColor === 1 ? 2 : 1;
             let i = 1;
             function step() {
                 if (i < boards.length) {
-                    const w = aiPredictWin(boards[i], myColor, rollouts);
+                    const b = boards[i];
+                    // 早盘均势：棋子很少时胜率约 50/50，跳过昂贵模拟（省时且足够准）
+                    let stones = 0;
+                    for (let y = 0; y < BOARD_SIZE; y++) for (let x = 0; x < BOARD_SIZE; x++) if (b[y][x]) stones++;
+                    if (stones <= 6) {
+                        series.push({ my: 50, opp: 50 });
+                        i++; onProgress(i, boards.length); setTimeout(step, 0); return;
+                    }
+                    // 决定性位置：一方一步即胜 → 直接判定，跳过整局模拟（省时）
+                    if (findImmediateWin(b, myColor)) {
+                        series.push({ my: 100, opp: 0 });
+                        i++; onProgress(i, boards.length); setTimeout(step, 0); return;
+                    }
+                    if (findImmediateWin(b, oppColor)) {
+                        series.push({ my: 0, opp: 100 });
+                        i++; onProgress(i, boards.length); setTimeout(step, 0); return;
+                    }
+                    const w = aiPredictWin(b, myColor, rollouts);
                     series.push({ my: Math.round(w * 10) / 10, opp: Math.round((100 - w) * 10) / 10 });
                     i++;
                     onProgress(i, boards.length);
@@ -4047,7 +4066,8 @@
         let replayIdx = 0;       // 已展示到第几手（0 = 空盘）
         let replayTimer = null;
         let replayCanvas = null, replayCtx = null, replayChartCanvas = null, replayChartCtx = null, replayProbSeries = [], replayMyColor = 1;
-        const REPLAY_ROLLOUTS = 8;    // 回看胜率模拟的蒙特卡洛次数（越多越准、越慢）
+        const REPLAY_ROLLOUTS = 6;    // 回看胜率模拟的蒙特卡洛次数（越多越准、越慢；6 局已能在 10s 内完成）
+        const REPLAY_MAX_PLIES = 60;  // 单局模拟步数上限，防止极端长局拖慢（超时未分胜负按和棋计）
         function openReplay(game) {
             if (!game || !game.moves || !game.moves.length) { showToast('该对局暂无回放数据'); return; }
             stopReplayPlay();
