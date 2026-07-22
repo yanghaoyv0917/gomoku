@@ -1273,7 +1273,7 @@
 
             <!-- 房间内聊天室 -->
             <div class="chat-panel" id="chatPanel">
-                <div class="chat-header">💬 房间聊天<span class="chat-sub">（仅房内两人可见）</span></div>
+                <div class="chat-header">💬 房间聊天<span class="chat-sub">（对弈双方与观战者均可发送、可见）</span></div>
                 <div class="chat-messages" id="chatMessages"></div>
                 <div class="chat-input-row">
                     <input type="text" id="chatInput" class="chat-input" placeholder="说点什么..." maxlength="200" autocomplete="off"
@@ -2007,6 +2007,8 @@
                             gameActive: gameActive,
                             gameOver: gameOver
                         });
+                        // 提示本端：有观战者进入（房主可见）
+                        appendChat((msg.nickname || '观战者') + ' 进入观战', null, false, true);
                     }
                     break;
                 case 'snapshot':
@@ -2046,7 +2048,7 @@
                     if (msg.role) { presence[msg.role] = msg.t || Date.now(); updatePeerStatus(); }
                     break;
                 case 'chat':
-                    if (msg.text) appendChat(msg.text, msg.nickname, false);
+                    if (msg.text) appendChat(msg.text, msg.nickname, false, false, roleTagOf(msg.role));
                     break;
             }
         }
@@ -2116,7 +2118,7 @@
                     break;
 
                 case 'chat':
-                    if (msg.text) appendChat(msg.text, msg.nickname, false);
+                    if (msg.text) appendChat(msg.text, msg.nickname, false, false, roleTagOf(msg.role));
                     break;
 
                 case 'snapshot':
@@ -2252,7 +2254,14 @@
 
         // ===== 房间内聊天室 =====
         let chatJoinedHint = false; // 防止重连重复刷「进入房间」系统消息
-        function appendChat(text, metaNick, isSelf, isSystem) {
+        // 角色 → 聊天消息中的身份标签（房主/客人/观战）
+        function roleTagOf(role) {
+            if (role === 'host') return '房主';
+            if (role === 'guest') return '客人';
+            if (role === 'spectator') return '观战';
+            return '';
+        }
+        function appendChat(text, metaNick, isSelf, isSystem, roleTag) {
             const box = document.getElementById('chatMessages');
             if (!box) return;
             const div = document.createElement('div');
@@ -2266,7 +2275,7 @@
                 div.className = 'chat-msg ' + (isSelf ? 'self' : 'other');
                 const meta = document.createElement('div');
                 meta.className = 'chat-meta';
-                meta.textContent = metaNick || (isSelf ? '我' : '对方');
+                meta.textContent = (metaNick || (isSelf ? '我' : '对方')) + (roleTag ? '（' + roleTag + '）' : '');
                 const b = document.createElement('div');
                 b.className = 'chat-bubble';
                 b.textContent = text;
@@ -2289,10 +2298,11 @@
                 from: myId,
                 nickname: myNickname,
                 avatar: myAvatar,
+                role: myRole,           // 携带身份，便于接收方显示「房主/客人/观战」
                 t: Date.now()
             };
-            sendData(payload);          // 通过当前中继（MQTT 或 WS）发给房内对手
-            appendChat(text, '我', true); // 本地立即显示（对方收到是另一条）
+            sendData(payload);          // 通过当前中继（MQTT 或 WS）发给房内对弈双方与观战者
+            appendChat(text, '我', true, false, roleTagOf(myRole)); // 本地立即显示（对方收到是另一条）
             input.value = '';
         }
 
