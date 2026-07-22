@@ -772,7 +772,12 @@
         .profile-field { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
         .profile-field label { font-size: 14px; color: #8B4513; white-space: nowrap; }
         .profile-field .nickname-input { flex: 1; margin: 0; }
-        .profile-section-label { font-size: 13px; color: #999; text-align: center; margin: 10px 0 8px; }
+        .profile-section-label { font-size: 13px; color: #999; text-align: center; margin: 10px 0 8px; display: flex; align-items: center; justify-content: center; gap: 10px; }
+        .clear-records-btn {
+            font-size: 12px; color: #c0392b; background: #fff; border: 1px solid #e6b3ab;
+            border-radius: 12px; padding: 3px 12px; cursor: pointer; transition: all 0.15s ease;
+        }
+        .clear-records-btn:hover { background: #c0392b; color: #fff; border-color: #c0392b; }
         .avatar-picker { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; }
         .avatar-opt {
             aspect-ratio: 1 / 1; border: 2px solid #e6d3b3; background: #fff;
@@ -1416,7 +1421,9 @@
                 <input type="file" id="avatarFileInput" accept="image/*" style="display:none;" onchange="onAvatarFileSelected(event)">
             </label>
             <div class="profile-games">
-                <p class="profile-section-label">棋局记录（最近 50 局）</p>
+                <p class="profile-section-label">棋局记录（最近 50 局）
+                    <button class="clear-records-btn" onclick="clearGameRecords()">清空战绩</button>
+                </p>
                 <div class="profile-games-summary" id="gameStats"></div>
                 <div class="game-records" id="gameRecords"></div>
             </div>
@@ -3977,6 +3984,15 @@
             let t = el ? (el.textContent || '') : '';
             if (t === '等待加入...' || t === '---' || !t.trim()) t = '对手';
             return t;
+        }
+        // 清空当前用户全部战绩记录（localStorage 中按用户名分键存储）
+        function clearGameRecords() {
+            const games = loadGames();
+            if (!games.length) { showToast('当前没有战绩记录'); return; }
+            if (!confirm('确定清空全部战绩记录吗？此操作不可恢复。')) return;
+            try { localStorage.removeItem(gamesKey()); } catch (e) {}
+            renderGameRecords();
+            showToast('已清空全部战绩记录');
         }
         function renderGameRecords() {
             const statsEl = document.getElementById('gameStats');
