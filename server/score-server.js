@@ -17,9 +17,10 @@
  * 运行：
  *   cd server && npm install && node score-server.js
  * 环境变量（均可选）：BROKER / D / FLOOR / GITHUB_TOKEN / GITHUB_OWNER /
- *   GITHUB_REPO / GITHUB_RATINGS_PATH / GITHUB_BRANCH
- *   设置 GITHUB_TOKEN 后，每局结算会把全量 ratings 同步进仓库
- *   ${GITHUB_RATINGS_PATH}，排行榜数据即「记录在 GitHub 库中」。
+ *   GITHUB_REPO / GITHUB_USERS_PATH / GITHUB_BRANCH
+ *   设置 GITHUB_TOKEN 后，每局结算会把「积分直接写入库中每位用户的个人数据」
+ *   （仓库 ${GITHUB_USERS_PATH}，结构为 uid -> {uid,nick,avatar,rating,games,wins}）。
+ *   客户端读取排行榜时，依据该文件中的用户个人信息数据刷新排行榜。
  *   未设置 GITHUB_TOKEN 时，仅本地 + MQTT 保留（排行榜仍可经 MQTT 消费）。
  */
 
@@ -35,16 +36,16 @@ const D = Number(process.env.D || 400);          // 期望分差敏感系数
 const FLOOR = Number(process.env.FLOOR || 100);  // 积分下限
 const REQ_TOPIC = 'gomoku/score/req';
 const RESP_TOPIC = 'gomoku/score/resp';
-const LEADERBOARD_TOPIC = 'gomoku/leaderboard'; // 排行榜：服务端权威发布 top100（retained）
+const LEADERBOARD_TOPIC = 'gomoku/leaderboard'; // 排行榜刷新信号：服务端发布轻量 ping（retained），客户端据此从仓库重拉用户数据
 const LEADERBOARD_LIMIT = 100;
-// GitHub 持久化：把 ratings 同步进仓库，让排行榜数据「记录在 GitHub 库中」
+// GitHub 持久化：把「每位用户的个人数据（含积分）」同步进仓库，排行榜即依据这些数据刷新
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN || '';
 const GITHUB_OWNER = process.env.GITHUB_OWNER || 'yanghaoyv0917';
 const GITHUB_REPO = process.env.GITHUB_REPO || 'gomoku';
-const GITHUB_RATINGS_PATH = process.env.GITHUB_RATINGS_PATH || 'data/ratings.json';
+const GITHUB_USERS_PATH = process.env.GITHUB_USERS_PATH || 'data/users.json';
 const GITHUB_BRANCH = process.env.GITHUB_BRANCH || 'main';
 const GH_API = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents`;
-const RATINGS_FILE = path.join(__dirname, 'ratings.json');
+const USERS_FILE = path.join(__dirname, 'users.json');
 const SEEN_FILE = path.join(__dirname, 'seen.json');
 const LOCK_FILE = path.join(__dirname, '.server.lock'); // 单实例锁，防止双实例重复结算
 const SEEN_CAP = 5000;                            // 去重表最多保留条数
@@ -52,16 +53,17 @@ const DEFAULT_RATING = 1500;
 const DEFAULT_K = 64;
 
 // ---------- 数据持久化 ----------
-let ratings = {};   // uid -> { rating, games }
+// 个人用户数据：uid -> { uid, nick, avatar, rating, games, wins }
+let users = {};
 let seen = {};      // gameId -> true（已结算去重）
 
 function loadStore() {
   try {
-    if (fs.existsSync(RATINGS_FILE)) {
-      const raw = JSON.parse(fs.readFileSync(RATINGS_FILE, 'utf8'));
-      if (raw && typeof raw === 'object') ratings = raw;
+    if (fs.existsSync(USERS_FILE)) {
+      const raw = JSON.parse(fs.readFileSync(USERS_FILE, 'utf8'));
+      if (raw && typeof raw === 'object') users = raw;
     }
-  } catch (e) { console.error('[store] ratings 读取失败，使用空表', e.message); }
+  } catch (e) { console.error('[store] users 读取失败，使用空表', e.message); }
   try {
     if (fs.existsSync(SEEN_FILE)) {
       const arr = JSON.parse(fs.readFileSync(SEEN_FILE, 'utf8'));
@@ -69,8 +71,8 @@ function loadStore() {
     }
   } catch (e) { console.error('[store] seen 读取失败', e.message); }
 }
-function saveRatings() {
-  try { fs.writeFileSync(RATINGS_FILE, JSON.stringify(ratings, null, 2)); } catch (e) { console.error('[store] ratings 写入失败', e.message); }
+function saveUsers() {
+  try { fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2)); } catch (e) { console.error('[store] users 写入失败', e.message); }
   scheduleGithubPush();
 }
 function markSeen(id) {
@@ -92,21 +94,32 @@ function kFor(rating) {
 function expected(ra, rb) {
   return 1 / (1 + Math.pow(10, (rb - ra) / D));
 }
-function getRating(uid) {
-  if (!ratings[uid]) ratings[uid] = { rating: DEFAULT_RATING, games: 0 };
-  return ratings[uid];
+function getProfile(uid) {
+  if (!users[uid]) users[uid] = { uid: uid, nick: uid, avatar: null, rating: DEFAULT_RATING, games: 0, wins: 0 };
+  return users[uid];
 }
 
 /**
- * 结算一局
+ * 结算一局，并把积分直接写入两位玩家的个人用户数据
  * @param {string} a 玩家 A 的 uid
  * @param {string} b 玩家 B 的 uid
  * @param {number} sa A 的赛果分：1 胜 / 0.5 平 / 0 负
+ * @param {{nick?:string,avatar?:string}} aMeta A 的昵称/头像（客户端上报）
+ * @param {{nick?:string,avatar?:string}} bMeta B 的昵称/头像（客户端上报，可能为 undefined）
  * @returns {{ratings:{a:number,b:number}, deltas:{a:number,b:number}}}
  */
-function settle(a, b, sa) {
-  const A = getRating(a);
-  const B = getRating(b);
+function settle(a, b, sa, aMeta, bMeta) {
+  const A = getProfile(a);
+  const B = getProfile(b);
+  // 用客户端上报的昵称/头像补全个人用户数据（仅在有值时覆盖，避免回退成 uid）
+  if (aMeta) {
+    if (aMeta.nick) A.nick = aMeta.nick;
+    if (aMeta.avatar) A.avatar = aMeta.avatar;
+  }
+  if (bMeta) {
+    if (bMeta.nick) B.nick = bMeta.nick;
+    if (bMeta.avatar) B.avatar = bMeta.avatar;
+  }
   const sb = 1 - sa; // 零和赛果（A 胜则 B 负，平则各 0.5）
   const ea = expected(A.rating, B.rating);
   const eb = 1 - ea;
@@ -117,36 +130,30 @@ function settle(a, b, sa) {
   B.rating = Math.max(FLOOR, B.rating + db);
   A.games = (A.games || 0) + 1;
   B.games = (B.games || 0) + 1;
+  if (sa === 1) A.wins = (A.wins || 0) + 1;
+  if (sb === 1) B.wins = (B.wins || 0) + 1;
   return {
     ratings: { a: A.rating, b: B.rating },
     deltas: { a: da, b: db }
   };
 }
 
-// ---------- 排行榜（权威发布 top N）----------
-// 计分服务持有全量 ratings，按积分降序取前 LEADERBOARD_LIMIT 名，
-// 发布到 LEADERBOARD_TOPIC（retained），客户端订阅即可渲染「排行榜」标签页。
+// ---------- 排行榜刷新信号 ----------
+// 不直接发布榜单内容，而是发布一条轻量 ping（retained）。客户端在「读取排行榜」时，
+// 会依据仓库中的用户个人信息数据（data/users.json）重新拉取并刷新排行榜。
 function publishLeaderboard() {
   try {
-    const arr = Object.keys(ratings).map(uid => ({
-      uid,
-      rating: ratings[uid].rating,
-      games: ratings[uid].games || 0
-    }));
-    arr.sort((x, y) => (y.rating - x.rating) || (x.uid < y.uid ? -1 : 1));
-    const top = arr.slice(0, LEADERBOARD_LIMIT).map((r, i) => ({
-      rank: i + 1, uid: r.uid, rating: r.rating, games: r.games
-    }));
-    client.publish(LEADERBOARD_TOPIC, JSON.stringify(top), { qos: 1, retain: true });
-    console.log('[leaderboard] 已发布 top', top.length, '（最高分', top.length ? top[0].rating : '-', '）');
+    const payload = JSON.stringify({ updated: true, ts: Date.now(), count: Object.keys(users).length });
+    client.publish(LEADERBOARD_TOPIC, payload, { qos: 1, retain: true });
+    console.log('[leaderboard] 已发布刷新信号（用户', Object.keys(users).length, '名）');
   } catch (e) {
     console.error('[leaderboard] 发布失败', e.message);
   }
 }
 
-// ---------- GitHub 入库（排行榜数据源）----------
-// 把全量 ratings 同步进仓库的 data/ratings.json，让排行榜数据「记录在 GitHub 库中」。
-// 客户端直接拉取该文件即可制作排行榜，无需依赖运行中的 MQTT 服务。
+// ---------- GitHub 入库（个人用户数据，排行榜数据源）----------
+// 把全量 users（每位用户的个人数据，含积分）同步进仓库的 data/users.json。
+// 积分被「直接写入」每位用户的个人数据中；客户端读取排行榜时依据该文件刷新。
 let ghPushTimer = null;
 let ghDirty = false;
 
@@ -159,26 +166,26 @@ function ghHeaders() {
   };
 }
 
-async function pushRatingsToGithub() {
+async function pushUsersToGithub() {
   if (!GITHUB_TOKEN) {
     console.warn('[github] 未设置 GITHUB_TOKEN 环境变量，跳过仓库同步（仅本地 + MQTT 保留）。');
     return;
   }
   try {
-    const content = JSON.stringify(ratings, null, 2);
+    const content = JSON.stringify(users, null, 2);
     const b64 = Buffer.from(content, 'utf8').toString('base64');
     // 取已有 sha（文件可能尚不存在）
     let sha = null;
     try {
-      const r = await fetch(`${GH_API}/${GITHUB_RATINGS_PATH}?ref=${GITHUB_BRANCH}`, { headers: ghHeaders() });
+      const r = await fetch(`${GH_API}/${GITHUB_USERS_PATH}?ref=${GITHUB_BRANCH}`, { headers: ghHeaders() });
       if (r.ok) { const j = await r.json(); sha = j.sha; }
     } catch (e) { /* 文件不存在时忽略 */ }
-    const body = { message: 'chore: 同步积分排行数据 ratings.json', content: b64, branch: GITHUB_BRANCH };
+    const body = { message: 'chore: 同步用户个人数据(含积分) users.json', content: b64, branch: GITHUB_BRANCH };
     if (sha) body.sha = sha;
-    const r = await fetch(`${GH_API}/${GITHUB_RATINGS_PATH}`, {
+    const r = await fetch(`${GH_API}/${GITHUB_USERS_PATH}`, {
       method: 'PUT', headers: ghHeaders(), body: JSON.stringify(body)
     });
-    if (r.ok) console.log('[github] 已同步 ratings.json 到仓库', `(${Object.keys(ratings).length} 名用户)`);
+    if (r.ok) console.log('[github] 已同步 users.json 到仓库', `(${Object.keys(users).length} 名用户)`);
     else { const t = await r.text(); console.error('[github] 同步失败', r.status, t.slice(0, 200)); }
   } catch (e) {
     console.error('[github] 同步异常', e.message);
@@ -191,24 +198,24 @@ function scheduleGithubPush() {
   if (ghPushTimer) return;
   ghPushTimer = setTimeout(() => {
     ghPushTimer = null;
-    if (ghDirty) { ghDirty = false; pushRatingsToGithub(); }
+    if (ghDirty) { ghDirty = false; pushUsersToGithub(); }
   }, 5000);
 }
 
-// 启动引导：本地空表时，从仓库 data/ratings.json 拉取作为权威初始数据（GitHub 为真相源）
+// 启动引导：本地空表时，从仓库 data/users.json 拉取作为权威初始数据（GitHub 为真相源）
 async function bootstrapFromGithub() {
-  if (Object.keys(ratings).length > 0) return;
+  if (Object.keys(users).length > 0) return;
   const ctrl = new AbortController();
   const to = setTimeout(() => ctrl.abort(), 5000);
   try {
-    const url = `https://raw.githubusercontent.com/${GITHUB_OWNER}/${GITHUB_REPO}/${GITHUB_BRANCH}/${GITHUB_RATINGS_PATH}`;
+    const url = `https://raw.githubusercontent.com/${GITHUB_OWNER}/${GITHUB_REPO}/${GITHUB_BRANCH}/${GITHUB_USERS_PATH}`;
     const r = await fetch(url, { signal: ctrl.signal });
     if (r.ok) {
       const obj = await r.json();
       if (obj && typeof obj === 'object' && !Array.isArray(obj)) {
-        ratings = obj;
-        saveRatings();
-        console.log('[github] 从仓库引导 ratings 数据', Object.keys(ratings).length, '条');
+        users = obj;
+        saveUsers();
+        console.log('[github] 从仓库引导 users 数据', Object.keys(users).length, '条');
       }
     }
   } catch (e) { console.warn('[github] 引导失败（使用本地空表）', e.message); }
@@ -268,7 +275,7 @@ async function start() {
     if (topic !== REQ_TOPIC) return;
     let msg;
     try { msg = JSON.parse(payload.toString()); } catch (e) { return; }
-    const { gameId, a, b, winner } = msg;
+    const { gameId, a, b, winner, aNick, aAvatar, bNick, bAvatar } = msg;
     if (!gameId || !a || !b) return;
 
     // 去重：同一局只结算一次（两端都会发 req，先到的结算，后到的直接回写原结果）
@@ -285,10 +292,13 @@ async function start() {
     else if (winner === '' || winner == null) sa = 0.5; // 和棋
     else return; // winner 非法，忽略
 
-    const result = settle(a, b, sa);
+    const result = settle(a, b, sa,
+      { nick: aNick, avatar: aAvatar },
+      (bNick || bAvatar) ? { nick: bNick, avatar: bAvatar } : undefined
+    );
     markSeen(gameId);
-    saveRatings();
-    publishLeaderboard(); // 积分变化后刷新排行榜
+    saveUsers();
+    publishLeaderboard(); // 个人数据变化后，发布刷新信号
 
     const resp = { gameId, ratings: result.ratings, deltas: result.deltas };
     try {
@@ -304,8 +314,8 @@ async function start() {
 
   // 优雅退出时落盘并释放锁（确保 GitHub 同步完成）
   const flush = async () => {
-    saveRatings();
-    if (ghDirty) { ghDirty = false; await pushRatingsToGithub(); }
+    saveUsers();
+    if (ghDirty) { ghDirty = false; await pushUsersToGithub(); }
     releaseLock();
     process.exit(0);
   };
