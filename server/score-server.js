@@ -31,6 +31,8 @@ const D = Number(process.env.D || 400);          // 期望分差敏感系数
 const FLOOR = Number(process.env.FLOOR || 100);  // 积分下限
 const REQ_TOPIC = 'gomoku/score/req';
 const RESP_TOPIC = 'gomoku/score/resp';
+const LEADERBOARD_TOPIC = 'gomoku/leaderboard'; // 排行榜：服务端权威发布 top100（retained）
+const LEADERBOARD_LIMIT = 100;
 const RATINGS_FILE = path.join(__dirname, 'ratings.json');
 const SEEN_FILE = path.join(__dirname, 'seen.json');
 const LOCK_FILE = path.join(__dirname, '.server.lock'); // 单实例锁，防止双实例重复结算
@@ -109,6 +111,27 @@ function settle(a, b, sa) {
   };
 }
 
+// ---------- 排行榜（权威发布 top N）----------
+// 计分服务持有全量 ratings，按积分降序取前 LEADERBOARD_LIMIT 名，
+// 发布到 LEADERBOARD_TOPIC（retained），客户端订阅即可渲染「排行榜」标签页。
+function publishLeaderboard() {
+  try {
+    const arr = Object.keys(ratings).map(uid => ({
+      uid,
+      rating: ratings[uid].rating,
+      games: ratings[uid].games || 0
+    }));
+    arr.sort((x, y) => (y.rating - x.rating) || (x.uid < y.uid ? -1 : 1));
+    const top = arr.slice(0, LEADERBOARD_LIMIT).map((r, i) => ({
+      rank: i + 1, uid: r.uid, rating: r.rating, games: r.games
+    }));
+    client.publish(LEADERBOARD_TOPIC, JSON.stringify(top), { qos: 1, retain: true });
+    console.log('[leaderboard] 已发布 top', top.length, '（最高分', top.length ? top[0].rating : '-', '）');
+  } catch (e) {
+    console.error('[leaderboard] 发布失败', e.message);
+  }
+}
+
 // ---------- 单实例锁 ----------
 // 防止误启动两个服务实例（双实例会导致同一局被重复结算、下发两条 resp）。
 function acquireLock() {
@@ -135,9 +158,10 @@ function releaseLock() {
 }
 
 // ---------- MQTT ----------
+let client = null; // 模块级 MQTT 客户端（publishLeaderboard 等函数需要引用）
 function start() {
   loadStore();
-  const client = mqtt.connect(BROKER, {
+  client = mqtt.connect(BROKER, {
     clientId: 'gomoku_score_server_' + Math.random().toString(16).slice(2, 10),
     reconnectPeriod: 2000,
     clean: true
@@ -149,6 +173,11 @@ function start() {
       if (err) console.error('[mqtt] 订阅失败', err.message);
       else console.log('[mqtt] 已订阅', REQ_TOPIC);
     });
+    // 启动即发布一次排行榜；并定期刷新，确保后订阅的客户端也能拿到最新榜单
+    publishLeaderboard();
+    if (!start._lbTimer) {
+      start._lbTimer = setInterval(publishLeaderboard, 30000);
+    }
   });
 
   client.on('message', (topic, payload) => {
@@ -175,6 +204,7 @@ function start() {
     const result = settle(a, b, sa);
     markSeen(gameId);
     saveRatings();
+    publishLeaderboard(); // 积分变化后刷新排行榜
 
     const resp = { gameId, ratings: result.ratings, deltas: result.deltas };
     try {
