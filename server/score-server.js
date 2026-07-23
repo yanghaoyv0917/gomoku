@@ -36,7 +36,7 @@ const D = Number(process.env.D || 400);          // 期望分差敏感系数
 const FLOOR = Number(process.env.FLOOR || 100);  // 积分下限
 const REQ_TOPIC = 'gomoku/score/req';
 const RESP_TOPIC = 'gomoku/score/resp';
-const LEADERBOARD_TOPIC = 'gomoku/leaderboard'; // 排行榜刷新信号：服务端发布轻量 ping（retained），客户端据此从仓库重拉用户数据
+const LEADERBOARD_TOPIC = 'gomoku/leaderboard'; // 实时榜单：服务端直接推送 top100 用户数据（retained）；GitHub(data/users.json) 仅作持久化备份
 const PROFILE_SET_TOPIC = 'gomoku/profile/set'; // 客户端实时上报个人资料（昵称/头像）变化；服务端即时写入仓库个人用户数据
 const LEADERBOARD_LIMIT = 100;
 // GitHub 持久化：把「每位用户的个人数据（含积分）」同步进仓库，排行榜即依据这些数据刷新
@@ -75,6 +75,7 @@ function loadStore() {
 function saveUsers() {
   try { fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2)); } catch (e) { console.error('[store] users 写入失败', e.message); }
   scheduleGithubPush();
+  publishLeaderboard(); // 任何用户数据变化都实时推送给客户端
 }
 function markSeen(id) {
   seen[id] = true;
@@ -161,19 +162,26 @@ function handleProfileSet(payload) {
     p.avatar = msg.avatar; changed = true;
   }
   if (!changed) return;
-  saveUsers();          // 写本地 + 触发近实时入库
-  publishLeaderboard(); // 昵称变化也刷新排行榜
+  saveUsers();          // 写本地 + 触发近实时入库 + 实时推送榜单
   console.log('[profile] 已实时更新个人资料', uid, '->', p.nick);
 }
 
-// ---------- 排行榜刷新信号 ----------
-// 不直接发布榜单内容，而是发布一条轻量 ping（retained）。客户端在「读取排行榜」时，
-// 会依据仓库中的用户个人信息数据（data/users.json）重新拉取并刷新排行榜。
+// ---------- 实时排行榜 ----------
+// 每次用户数据变化，直接把 top100 榜单数据通过 MQTT 推给客户端（retained）。
+// 客户端收到即渲染，无需再回源 GitHub。GitHub(data/users.json) 仅作持久化备份。
 function publishLeaderboard() {
+  if (!client || !client.connected) return; // 未连接时不发布（如 bootstrap 阶段）
   try {
-    const payload = JSON.stringify({ updated: true, ts: Date.now(), count: Object.keys(users).length });
+    const all = Object.keys(users).map(uid => {
+      const u = users[uid] || {};
+      // 头像仅在「短字符串（emoji/小图）」时随榜推送，避免 data:URL 撑大 MQTT 消息
+      const avatar = (typeof u.avatar === 'string' && u.avatar.length <= 32) ? u.avatar : '';
+      return { uid, nick: u.nick || uid, avatar, rating: u.rating || 0, games: u.games || 0, wins: u.wins || 0 };
+    }).sort((a, b) => (b.rating - a.rating) || (a.uid < b.uid ? -1 : 1));
+    const top = all.slice(0, 100);
+    const payload = JSON.stringify({ updated: true, ts: Date.now(), count: all.length, users: top });
     client.publish(LEADERBOARD_TOPIC, payload, { qos: 1, retain: true });
-    console.log('[leaderboard] 已发布刷新信号（用户', Object.keys(users).length, '名）');
+    console.log('[leaderboard] 已发布实时榜单（共', all.length, '名，推送 top', top.length, '）');
   } catch (e) {
     console.error('[leaderboard] 发布失败', e.message);
   }
@@ -346,8 +354,7 @@ async function start() {
       (bNick || bAvatar) ? { nick: bNick, avatar: bAvatar } : undefined
     );
     markSeen(gameId);
-    saveUsers();
-    publishLeaderboard(); // 个人数据变化后，发布刷新信号
+    saveUsers(); // 写本地 + 触发近实时入库 + 实时推送榜单
 
     const resp = { gameId, ratings: result.ratings, deltas: result.deltas };
     try {
