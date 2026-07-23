@@ -1800,6 +1800,7 @@
         let presenceMap = {};             // user -> {online, ts}
         let globalPresenceTimer = null;
         let leaderboardData = null;
+        let leaderboardFallbackTimer = null; // GitHub 兜底拉取的防抖定时器（实时榜优先，不覆盖实时数据）
 
         function socialReady() {
             return !!currentUser && currentUser !== 'guest' && !isAdminSession(currentUser);
@@ -2067,21 +2068,29 @@
             return new TextDecoder('utf-8').decode(bytes);
         }
         function loadLeaderboard() {
+            // 实时榜（MQTT 保留消息）为主：订阅即收到服务端推送的完整榜单并立即渲染
             if (mqttClient && mqttClient.connected) mqttClient.subscribe(LEADERBOARD_TOPIC, { qos: SOCIAL_QOS });
+            else if (!mqttClient) connectMqtt(); // 未连则触发连接，on('connect') 会订阅并推实时榜
             renderLeaderboard();
-            fetchGitHubLeaderboard();
+            // 若 1.5s 内未收到实时数据，再回退 GitHub 仓库（仅作兜底，且不会用空数据覆盖实时数据）
+            if (leaderboardData && leaderboardData.length) return;
+            clearTimeout(leaderboardFallbackTimer);
+            leaderboardFallbackTimer = setTimeout(() => {
+                if (!leaderboardData || !leaderboardData.length) fetchGitHubLeaderboard();
+            }, 1500);
         }
         function fetchGitHubLeaderboard() {
             const el = document.getElementById('leaderboardBody');
             if (el && !leaderboardData) el.innerHTML = '<p class="leaderboard-empty">正在从 GitHub 仓库加载排行榜…</p>';
-            // 排行榜依据「库中用户个人信息数据」（data/users.json）刷新
+            // 排行榜依据「库中用户个人信息数据」（data/users.json）刷新（兜底用，不覆盖实时数据）
             const apiUrl = 'https://api.github.com/repos/yanghaoyv0917/gomoku/contents/data/users.json?ref=main';
+            const applyIfEmpty = (obj) => { if (!leaderboardData || !leaderboardData.length) applyLeaderboard(obj); };
             const tryApi = () => fetch(apiUrl, { headers: { 'Accept': 'application/vnd.github+json' }, cache: 'no-store' })
                 .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
-                .then(j => { applyLeaderboard(JSON.parse(b64ToStr(j.content))); });
+                .then(j => { applyIfEmpty(JSON.parse(b64ToStr(j.content))); });
             const tryCdn = () => fetch(GITHUB_USERS_URL, { cache: 'no-store' })
                 .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
-                .then(obj => { applyLeaderboard(obj); });
+                .then(obj => { applyIfEmpty(obj); });
             tryApi().catch(() => tryCdn().catch(e => {
                 console.warn('[leaderboard] GitHub 拉取失败', e && e.message);
                 if (!leaderboardData && el) el.innerHTML = '<p class="leaderboard-empty">暂无排行数据（计分服务尚未产生对局，或无法访问仓库）。<br>可在好友对局后点右上角 ⟳ 刷新查看。</p>';
@@ -2134,8 +2143,13 @@
             renderLeaderboard();
         }
         function refreshLeaderboard() {
-            leaderboardData = null;
-            fetchGitHubLeaderboard();
+            // 重新订阅排行榜主题以拿到服务端最新保留消息（实时优先）；若仍缺实时数据则回退 GitHub
+            if (mqttClient && mqttClient.connected) mqttClient.subscribe(LEADERBOARD_TOPIC, { qos: SOCIAL_QOS });
+            else if (!mqttClient) connectMqtt();
+            if (!(leaderboardData && leaderboardData.length)) {
+                clearTimeout(leaderboardFallbackTimer);
+                leaderboardFallbackTimer = setTimeout(() => { if (!leaderboardData || !leaderboardData.length) fetchGitHubLeaderboard(); }, 1200);
+            }
         }
         function renderLeaderboard() {
             const el = document.getElementById('leaderboardBody');
@@ -5611,9 +5625,11 @@
         function enterApp() {
             applyProfile();
             updateUserBadge();
-            // 登录后启动社交系统：订阅好友/邀请/在线状态/排行榜主题，并开始全局在线心跳
-            subscribeSocialTopics();
-            startGlobalPresence();
+            // 登录后即建立联机连接并登记到排行榜：确保即便只玩「人机」也会计入榜单，
+            // 不再把注册推迟到进入「联机」大厅（否则仅玩人机/未点联机的用户永远不计入）。
+            // 连接成功后 on('connect') 会订阅社交主题并上报个人资料（publishProfileUpdate）。
+            if (!mqttClient) connectMqtt();
+            else if (mqttClient.connected) { subscribeSocialTopics(); startGlobalPresence(); }
             switchPage('mainPage');
         }
 
