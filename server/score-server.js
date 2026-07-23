@@ -239,24 +239,31 @@ function scheduleGithubPush() {
   }, wait);
 }
 
-// 启动引导：本地空表时，从仓库 data/users.json 拉取作为权威初始数据（GitHub 为真相源）
+// 启动引导：本地空表时，从仓库 data/users.json 拉取作为权威初始数据（GitHub 为真相源）。
+// 若不同步到本地，首次结算 pushUsersToGithub 会用空表覆盖仓库、清空其他玩家数据，故必须先把仓库拉全。
+// raw 常被沙箱/网络拦截，故 raw 失败再用 GitHub Contents API 兜底（与客户端一致）。
 async function bootstrapFromGithub() {
   if (Object.keys(users).length > 0) return;
-  const ctrl = new AbortController();
-  const to = setTimeout(() => ctrl.abort(), 5000);
+  const tryParse = (obj) => (obj && typeof obj === 'object' && !Array.isArray(obj));
+  // 1) raw（无需鉴权，最快）
   try {
-    const url = `https://raw.githubusercontent.com/${GITHUB_OWNER}/${GITHUB_REPO}/${GITHUB_BRANCH}/${GITHUB_USERS_PATH}`;
-    const r = await fetch(url, { signal: ctrl.signal });
+    const r = await fetch(`https://raw.githubusercontent.com/${GITHUB_OWNER}/${GITHUB_REPO}/${GITHUB_BRANCH}/${GITHUB_USERS_PATH}`, { signal: AbortSignal.timeout(5000) });
     if (r.ok) {
       const obj = await r.json();
-      if (obj && typeof obj === 'object' && !Array.isArray(obj)) {
-        users = obj;
-        saveUsers();
-        console.log('[github] 从仓库引导 users 数据', Object.keys(users).length, '条');
+      if (tryParse(obj)) { users = obj; saveUsers(); console.log('[github] 从仓库(raw)引导 users 数据', Object.keys(users).length, '条'); return; }
+    }
+  } catch (e) { console.warn('[github] raw 引导失败，尝试 API', e.message); }
+  // 2) GitHub Contents API 兜底
+  try {
+    const r = await fetch(`${GH_API}/${GITHUB_USERS_PATH}?ref=${GITHUB_BRANCH}`, { headers: ghHeaders(), signal: AbortSignal.timeout(5000) });
+    if (r.ok) {
+      const j = await r.json();
+      if (j && j.content) {
+        const obj = JSON.parse(Buffer.from(j.content, 'base64').toString('utf8'));
+        if (tryParse(obj)) { users = obj; saveUsers(); console.log('[github] 从仓库(API)引导 users 数据', Object.keys(users).length, '条'); return; }
       }
     }
-  } catch (e) { console.warn('[github] 引导失败（使用本地空表）', e.message); }
-  finally { clearTimeout(to); }
+  } catch (e) { console.warn('[github] API 引导失败（使用本地空表）', e.message); }
 }
 
 // ---------- 单实例锁 ----------
