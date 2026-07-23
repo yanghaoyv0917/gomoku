@@ -38,6 +38,8 @@ const REQ_TOPIC = 'gomoku/score/req';
 const RESP_TOPIC = 'gomoku/score/resp';
 const LEADERBOARD_TOPIC = 'gomoku/leaderboard'; // 实时榜单：服务端直接推送 top100 用户数据（retained）；GitHub(data/users.json) 仅作持久化备份
 const PROFILE_SET_TOPIC = 'gomoku/profile/set'; // 客户端实时上报个人资料（昵称/头像）变化；服务端即时写入仓库个人用户数据
+const PROFILE_DEL_TOPIC = 'gomoku/profile/del'; // 管理员注销用户：客户端发布 {uid}，服务端删除该用户并即时刷新
+const ADMIN_USERS_TOPIC = 'gomoku/admin/users'; // 完整注册用户表（retained）：服务端把全部用户推给管理员页，作为注册用户的权威源
 const LEADERBOARD_LIMIT = 100;
 // GitHub 持久化：把「每位用户的个人数据（含积分）」同步进仓库，排行榜即依据这些数据刷新
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN || '';
@@ -76,6 +78,7 @@ function saveUsers() {
   try { fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2)); } catch (e) { console.error('[store] users 写入失败', e.message); }
   scheduleGithubPush();
   publishLeaderboard(); // 任何用户数据变化都实时推送给客户端
+  publishAdminUsers();  // 同步把完整用户表推给管理员页（注册用户权威源）
 }
 function markSeen(id) {
   seen[id] = true;
@@ -188,6 +191,35 @@ function publishLeaderboard() {
   } catch (e) {
     console.error('[leaderboard] 发布失败', e.message);
   }
+}
+
+// 完整注册用户表（管理员页权威源）：推送全部用户（不限 top100），头像同样仅带短字符串
+function publishAdminUsers() {
+  if (!client || !client.connected) return;
+  try {
+    const list = Object.keys(users).map(uid => {
+      const u = users[uid] || {};
+      const avatar = (typeof u.avatar === 'string' && u.avatar.length <= 32) ? u.avatar : '';
+      return { uid, nick: u.nick || uid, avatar, rating: u.rating || 0, games: u.games || 0, wins: u.wins || 0 };
+    }).sort((a, b) => (b.rating - a.rating) || (a.uid < b.uid ? -1 : 1));
+    const payload = JSON.stringify({ updated: true, ts: Date.now(), count: list.length, users: list });
+    client.publish(ADMIN_USERS_TOPIC, payload, { qos: 1, retain: true });
+    console.log('[admin] 已发布注册用户表（共', list.length, '名）');
+  } catch (e) {
+    console.error('[admin] 发布失败', e.message);
+  }
+}
+
+// 管理员注销用户：从 users 中删除并即时刷新（榜单/管理员表都会重推）
+function handleProfileDel(payload) {
+  let msg;
+  try { msg = JSON.parse(payload.toString()); } catch (e) { return; }
+  const uid = msg && msg.uid;
+  if (!uid || !users[uid]) return;
+  const nick = users[uid].nick || uid;
+  delete users[uid];
+  saveUsers(); // 写本地 + 入库 + 重推榜单/管理员表
+  console.log('[admin] 已注销用户', uid, '->', nick);
 }
 
 // ---------- GitHub 入库（个人用户数据，排行榜数据源）----------
@@ -323,15 +355,21 @@ async function start() {
       if (err) console.error('[mqtt] 订阅失败', err.message);
       else console.log('[mqtt] 已订阅', PROFILE_SET_TOPIC);
     });
-    // 启动即发布一次排行榜；并每 10s 心跳刷新，确保「每时每刻」实时，后订阅的客户端也能拿到最新榜单
+    client.subscribe(PROFILE_DEL_TOPIC, { qos: 0 }, (err) => {
+      if (err) console.error('[mqtt] 订阅失败', err.message);
+      else console.log('[mqtt] 已订阅', PROFILE_DEL_TOPIC);
+    });
+    // 启动即发布一次榜单与注册用户表；并每 10s 心跳刷新，确保「每时每刻」实时，后订阅的客户端也能拿到最新数据
     publishLeaderboard();
+    publishAdminUsers();
     if (!start._lbTimer) {
-      start._lbTimer = setInterval(publishLeaderboard, 10000);
+      start._lbTimer = setInterval(() => { publishLeaderboard(); publishAdminUsers(); }, 10000);
     }
   });
 
   client.on('message', (topic, payload) => {
     if (topic === PROFILE_SET_TOPIC) { handleProfileSet(payload); return; }
+    if (topic === PROFILE_DEL_TOPIC) { handleProfileDel(payload); return; }
     if (topic !== REQ_TOPIC) return;
     let msg;
     try { msg = JSON.parse(payload.toString()); } catch (e) { return; }
