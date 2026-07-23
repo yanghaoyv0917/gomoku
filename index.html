@@ -502,6 +502,19 @@
             transition: all 0.2s ease;
         }
         .back-btn-inline:hover { background: rgba(139,69,19,0.1); }
+        .refresh-btn-inline {
+            background: transparent;
+            color: #8B4513;
+            border: 2px solid #8B4513;
+            width: 44px; height: 44px;
+            border-radius: 50%;
+            font-size: 22px;
+            line-height: 1;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        .refresh-btn-inline:hover { background: rgba(139,69,19,0.1); transform: rotate(90deg); }
+        .lb-src { font-size: 12px; color: #a67c52; font-weight: 400; letter-spacing: 0; }
         .plus-btn {
             background: linear-gradient(145deg, #c9a66b, #a67c52);
             color: #fff;
@@ -1387,9 +1400,9 @@
             <div class="lobby-topbar">
                 <button class="back-btn-inline" onclick="switchHome('mainPage')">←</button>
                 <h2 class="lobby-title">🏆 积分排行榜</h2>
-                <span style="width:40px;display:inline-block;"></span>
+                <button class="refresh-btn-inline" onclick="refreshLeaderboard()" title="刷新排行榜">⟳</button>
             </div>
-            <p class="lobby-subtitle">所有用户积分排名 · 前 100 名（由计分服务权威发布）</p>
+            <p class="lobby-subtitle">所有用户积分排名 · 前 100 名<br><span class="lb-src">数据来源：GitHub 仓库 ratings.json（计分服务每局同步）</span></p>
             <div id="leaderboardBody" class="leaderboard-body"></div>
         </div>
 
@@ -1768,6 +1781,8 @@
         const INVITE_PREFIX = 'gomoku/invite/';
         const PRESENCE_PREFIX = 'gomoku/presence/';
         const LEADERBOARD_TOPIC = 'gomoku/leaderboard';
+        // 排行榜数据源：仓库中的 ratings.json（权威）。客户端直接拉取该文件制作排行榜。
+        const GITHUB_RATINGS_URL = 'https://cdn.jsdelivr.net/gh/yanghaoyv0917/gomoku@main/data/ratings.json';
         const PRESENCE_TTL_GLOBAL = 25000;     // 全局好友在线判定阈值（ms）
         const PRESENCE_PUB_INTERVAL = 10000;   // 全局在线心跳间隔（ms）
         const SOCIAL_QOS = 1;
@@ -2022,23 +2037,67 @@
             refreshFriendPresenceSubs();
             renderFriendRequests(); renderFriends(); renderInvites(); updatePresenceDots();
         }
-        // ===== 排行榜 =====
+        // ===== 排行榜（数据来自 GitHub 仓库中的 ratings.json）=====
+        // GitHub API 返回最新数据（CORS 可用，但有速率限制）；jsDelivr 无限速但带缓存。
+        // 策略：优先 GitHub API（实时），失败再回退 jsDelivr；对局结束时 MQTT 仍会即时刷新。
+        function b64ToStr(b64) {
+            const bin = atob(b64);
+            const bytes = new Uint8Array(bin.length);
+            for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+            return new TextDecoder('utf-8').decode(bytes);
+        }
         function loadLeaderboard() {
             if (mqttClient && mqttClient.connected) mqttClient.subscribe(LEADERBOARD_TOPIC, { qos: SOCIAL_QOS });
             renderLeaderboard();
+            fetchGitHubLeaderboard();
+        }
+        function fetchGitHubLeaderboard() {
+            const el = document.getElementById('leaderboardBody');
+            if (el && !leaderboardData) el.innerHTML = '<p class="leaderboard-empty">正在从 GitHub 仓库加载排行榜…</p>';
+            const apiUrl = 'https://api.github.com/repos/yanghaoyv0917/gomoku/contents/data/ratings.json?ref=main';
+            const tryApi = () => fetch(apiUrl, { headers: { 'Accept': 'application/vnd.github+json' }, cache: 'no-store' })
+                .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+                .then(j => { applyLeaderboard(JSON.parse(b64ToStr(j.content))); });
+            const tryCdn = () => fetch(GITHUB_RATINGS_URL, { cache: 'no-store' })
+                .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+                .then(obj => { applyLeaderboard(obj); });
+            tryApi().catch(() => tryCdn().catch(e => {
+                console.warn('[leaderboard] GitHub 拉取失败', e && e.message);
+                if (!leaderboardData && el) el.innerHTML = '<p class="leaderboard-empty">暂无排行数据（计分服务尚未产生对局，或无法访问仓库）。<br>可在好友对局后点右上角 ⟳ 刷新查看。</p>';
+            }));
         }
         function handleLeaderboardMsg(payload) {
-            try { leaderboardData = JSON.parse(payload.toString()); } catch (e) { return; }
+            try { applyLeaderboard(JSON.parse(payload.toString())); } catch (e) {}
+        }
+        // 归一化：支持两种格式——{uid:{rating,games}}（GitHub 仓库）或 [{rank,uid,rating,games}]（MQTT 实时）
+        function normalizeLeaderboard(data) {
+            let arr;
+            if (Array.isArray(data)) {
+                arr = data.map(r => ({ uid: r.uid, rating: Number(r.rating) || 0, games: Number(r.games) || 0 }));
+            } else if (data && typeof data === 'object') {
+                arr = Object.keys(data).map(uid => ({ uid: uid, rating: Number(data[uid].rating) || 0, games: Number(data[uid].games) || 0 }));
+            } else {
+                return [];
+            }
+            arr.sort((x, y) => (y.rating - x.rating) || (x.uid < y.uid ? -1 : 1));
+            return arr.slice(0, 100).map((r, i) => ({ rank: i + 1, uid: r.uid, rating: r.rating, games: r.games }));
+        }
+        function applyLeaderboard(data) {
+            leaderboardData = normalizeLeaderboard(data);
             renderLeaderboard();
+        }
+        function refreshLeaderboard() {
+            leaderboardData = null;
+            fetchGitHubLeaderboard();
         }
         function renderLeaderboard() {
             const el = document.getElementById('leaderboardBody');
             if (!el) return;
             if (!leaderboardData) {
-                el.innerHTML = '<p class="leaderboard-empty">正在等待计分服务发布排行榜…<br>（若长时间无数据，说明计分服务未运行）</p>';
+                el.innerHTML = '<p class="leaderboard-empty">正在加载排行榜…</p>';
                 return;
             }
-            if (!Array.isArray(leaderboardData) || !leaderboardData.length) {
+            if (!leaderboardData.length) {
                 el.innerHTML = '<p class="leaderboard-empty">暂无积分数据</p>';
                 return;
             }
