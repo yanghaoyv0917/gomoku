@@ -1,1 +1,34 @@
-{}
+{
+  "alice": {
+    "uid": "alice",
+    "nick": "爱丽丝",
+    "avatar": "👩",
+    "rating": 1552,
+    "games": 2,
+    "wins": 2
+  },
+  "bob": {
+    "uid": "bob",
+    "nick": "鲍勃",
+    "avatar": "👨",
+    "rating": 1468,
+    "games": 1,
+    "wins": 0
+  },
+  "carol": {
+    "uid": "carol",
+    "nick": "卡萝尔",
+    "avatar": "🌸",
+    "rating": 1442,
+    "games": 2,
+    "wins": 0
+  },
+  "dave": {
+    "uid": "dave",
+    "nick": "戴夫",
+    "avatar": "🧑",
+    "rating": 1532,
+    "games": 1,
+    "wins": 1
+  }
+}
