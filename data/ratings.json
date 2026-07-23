@@ -1,1 +1,18 @@
-{}
+{
+  "alice": {
+    "rating": 1508,
+    "games": 2
+  },
+  "bob": {
+    "rating": 1468,
+    "games": 1
+  },
+  "carol": {
+    "rating": 1556,
+    "games": 2
+  },
+  "dave": {
+    "rating": 1468,
+    "games": 1
+  }
+}
