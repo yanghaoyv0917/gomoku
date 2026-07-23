@@ -1,1 +1,10 @@
-{}
+{
+  "verify_user_mrxlan08": {
+    "uid": "verify_user_mrxlan08",
+    "nick": "验证号",
+    "avatar": "🤖",
+    "rating": 1500,
+    "games": 0,
+    "wins": 0
+  }
+}
