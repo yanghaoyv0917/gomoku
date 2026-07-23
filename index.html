@@ -4313,9 +4313,15 @@
         function applyProfile() {
             const p = loadProfile();
             userProfile = (p && typeof p === 'object') ? p : {};
-            if (!userProfile.avatar) userProfile.avatar = randomAvatar();
             if (userProfile.points == null) userProfile.points = 1000;
             if (!userProfile.nickname) userProfile.nickname = currentUser || '玩家';
+            // 头像：仅当用户在个人信息面板手动选择/上传过（avatarLocked）才保留固定头像；
+            // 否则每次登录随机分配一个新头像，让登录后的头像随机变化
+            if (userProfile.avatarLocked) {
+                if (!userProfile.avatar) userProfile.avatar = randomAvatar();
+            } else {
+                userProfile.avatar = randomAvatar();
+            }
             myNickname = userProfile.nickname;
             myAvatar = userProfile.avatar;
         }
@@ -4335,11 +4341,30 @@
                 b.onclick = function () { selectProfileAvatar(a); };
                 picker.appendChild(b);
             });
+            // 解除锁定：回到“每次登录随机”模式（当前未锁定时高亮）
+            const unlock = document.createElement('button');
+            unlock.className = 'avatar-opt' + (!userProfile.avatarLocked ? ' selected' : '');
+            unlock.textContent = '🎲';
+            unlock.title = '每次登录随机生成头像';
+            unlock.onclick = function () {
+                userProfile.avatarLocked = false;
+                userProfile.avatar = randomAvatar();
+                saveProfileToStore(userProfile);
+                myAvatar = userProfile.avatar;
+                renderAvatarEl(document.getElementById('profileAvatarBig'), userProfile.avatar);
+                updateUserBadge();
+                const opts = picker.children;
+                for (let i = 0; i < opts.length; i++) opts[i].classList.remove('selected');
+                unlock.classList.add('selected');
+            };
+            picker.appendChild(unlock);
             document.getElementById('profileModal').classList.add('active');
             renderGameRecords();
         }
         function selectProfileAvatar(a) {
             userProfile.avatar = a;
+            userProfile.avatarLocked = true;   // 用户主动选择 → 锁定固定头像，不再每次登录随机
+            saveProfileToStore(userProfile);
             renderAvatarEl(document.getElementById('profileAvatarBig'), a);
             const opts = document.getElementById('avatarPicker').children;
             for (let i = 0; i < opts.length; i++) {
@@ -4354,6 +4379,8 @@
             reader.onload = function (ev) {
                 const dataUrl = ev.target.result;
                 userProfile.avatar = dataUrl;
+                userProfile.avatarLocked = true;   // 用户主动上传 → 锁定固定头像
+                saveProfileToStore(userProfile);
                 renderAvatarEl(document.getElementById('profileAvatarBig'), dataUrl);
                 const opts = document.getElementById('avatarPicker').children;
                 for (let i = 0; i < opts.length; i++) opts[i].classList.remove('selected');
