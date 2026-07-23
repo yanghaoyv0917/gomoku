@@ -185,6 +185,50 @@
         .challenge-cta { width: min(660px, 92vw); margin: 22px auto 30px; text-align: center; }
         .challenge-cta .start-btn { padding: 14px 34px; font-size: 19px; letter-spacing: 3px; }
 
+        /* ===== 三标签页导航（主页 / 好友 / 排行榜） ===== */
+        .home-tabs { display: flex; justify-content: center; gap: 8px; width: min(660px, 92vw); margin: 14px auto 4px; }
+        .home-tab { flex: 1; padding: 12px 0; font-size: 17px; letter-spacing: 2px; border: 2px solid #c9a66b; border-radius: 12px; background: rgba(255,255,255,.6); color: #5a3a1a; cursor: pointer; transition: all .2s ease; font-family: 'KaiTi','楷体',serif; }
+        .home-tab:hover { border-color: #e8743b; }
+        .home-tab.active { background: linear-gradient(145deg,#e8743b,#c8551f); color: #fff; border-color: #c8551f; box-shadow: 0 4px 12px rgba(200,85,31,.3); }
+
+        /* ===== 好友页面 ===== */
+        .friend-gate { width: min(660px, 92vw); margin: 30px auto; text-align: center; color: #5a3a1a; font-size: 16px; background: rgba(255,255,255,.6); border: 1px solid #c9a66b; border-radius: 12px; padding: 20px; }
+        .friend-gate a { color: #c8551f; font-weight: 700; }
+        .friend-section { width: min(660px, 92vw); margin: 14px auto 0; text-align: left; background: rgba(255,255,255,.72); border: 2px solid #c9a66b; border-radius: 12px; padding: 12px 16px; }
+        .friend-cat { font-family: 'KaiTi','楷体',serif; color: #5a3a1a; font-size: 20px; letter-spacing: 1px; margin: 0 0 10px; display: flex; align-items: center; gap: 8px; border-left: 5px solid #c9a66b; padding-left: 10px; }
+        .friend-badge { background: #e8743b; color: #fff; border-radius: 12px; padding: 1px 9px; font-size: 14px; font-weight: 700; }
+        .friend-count { color: #a67c52; font-size: 16px; }
+        .friend-add-row { display: flex; gap: 10px; }
+        .friend-input { flex: 1; padding: 10px 14px; font-size: 15px; border: 2px solid #c9a66b; border-radius: 10px; outline: none; font-family: inherit; }
+        .friend-input:focus { border-color: #e8743b; }
+        .friend-send { padding: 10px 22px; font-size: 16px; letter-spacing: 2px; white-space: nowrap; }
+        .friend-list { display: flex; flex-direction: column; gap: 8px; }
+        .friend-empty { color: #a67c52; font-size: 14px; text-align: center; padding: 10px 0; margin: 0; }
+        .friend-row { display: flex; align-items: center; gap: 10px; padding: 8px 10px; background: rgba(255,255,255,.7); border: 1px solid #e0cba6; border-radius: 10px; }
+        .friend-name { flex: 1; font-size: 16px; color: #3a2a14; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .friend-actions { display: flex; gap: 8px; }
+        .friend-btn { border: none; border-radius: 8px; padding: 6px 16px; font-size: 14px; cursor: pointer; color: #fff; background: #c9a66b; transition: background .2s; }
+        .friend-btn:hover { background: #b8915a; }
+        .friend-btn.ok { background: #5b8c6e; }
+        .friend-btn.ok:hover { background: #4a7a5c; }
+        .friend-btn.no { background: #c08070; }
+        .friend-btn.no:hover { background: #b06a58; }
+        .friend-online-dot { width: 12px; height: 12px; border-radius: 50%; background: #c9b8a0; flex: 0 0 auto; box-shadow: 0 0 0 2px rgba(0,0,0,.05); }
+        .friend-online-dot.on { background: #3fbf5f; box-shadow: 0 0 6px rgba(63,191,95,.7); }
+
+        /* ===== 排行榜页面 ===== */
+        .leaderboard-body { width: min(660px, 92vw); margin: 12px auto 30px; }
+        .lb-head, .lb-row { display: grid; grid-template-columns: 64px 1fr 90px 70px; align-items: center; padding: 10px 14px; border-radius: 10px; }
+        .lb-head { background: linear-gradient(145deg,#e8743b,#c8551f); color: #fff; font-size: 15px; letter-spacing: 1px; font-family: 'KaiTi','楷体',serif; }
+        .lb-head .lb-rating, .lb-head .lb-games { text-align: right; }
+        .lb-row { background: rgba(255,255,255,.72); border: 1px solid #e0cba6; margin-top: 6px; font-size: 15px; color: #3a2a14; }
+        .lb-row.me { background: linear-gradient(145deg,#fff3d6,#ffe2ad); border-color: #e8743b; font-weight: 700; }
+        .lb-rank { font-weight: 700; color: #a8431f; text-align: center; }
+        .lb-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .lb-rating { text-align: right; color: #c8551f; font-weight: 700; }
+        .lb-games { text-align: right; color: #a67c52; }
+        .leaderboard-empty { width: min(660px,92vw); margin: 40px auto; text-align: center; color: #a67c52; font-size: 15px; line-height: 1.8; }
+
         /* —— 200 关关卡选择 —— */
         .ch-progress { width: min(660px, 92vw); margin: 4px auto 14px; text-align: center; font-size: 15px; color: #5a3a1a; background: rgba(255,255,255,.6); border: 1px solid #c9a66b; border-radius: 20px; padding: 6px 0; }
         .ch-tier-block { width: min(660px, 92vw); margin: 6px auto 0; }
@@ -1277,7 +1321,13 @@
             <div class="admin-list" id="adminUserList"></div>
         </div>
 
-        <!-- 主页面 -->
+        <!-- 主页面（三标签页：主页 / 好友 / 排行榜） -->
+        <nav id="homeTabs" class="home-tabs" style="display:none;">
+            <button class="home-tab active" data-page="mainPage" onclick="switchHome('mainPage')">🏠 主页</button>
+            <button class="home-tab" data-page="friendPage" onclick="switchHome('friendPage')">👥 好友</button>
+            <button class="home-tab" data-page="leaderboardPage" onclick="switchHome('leaderboardPage')">🏆 排行榜</button>
+        </nav>
+
         <div id="mainPage" class="page">
             <div class="user-badge" id="userBadge" style="display:none;">
                 <span class="badge-avatar" id="badgeAvatar" onclick="openProfilePanel()" title="查看/修改个人信息"></span>
@@ -1297,6 +1347,50 @@
                 <div class="piece black"></div>
                 <div class="piece white"></div>
             </div>
+        </div>
+
+        <!-- 好友页面 -->
+        <div id="friendPage" class="page">
+            <div class="lobby-topbar">
+                <button class="back-btn-inline" onclick="switchHome('mainPage')">←</button>
+                <h2 class="lobby-title">👥 好友</h2>
+                <span style="width:40px;display:inline-block;"></span>
+            </div>
+            <div id="friendGate" class="friend-gate" style="display:none;">
+                <p>好友功能需要登录账号后使用。请先<a href="javascript:void(0)" onclick="switchPage('authPage')">登录或注册</a>。</p>
+            </div>
+            <div id="friendBody">
+                <div class="friend-section">
+                    <h3 class="friend-cat">添加好友</h3>
+                    <div class="friend-add-row">
+                        <input type="text" id="friendInput" class="friend-input" placeholder="输入对方用户名" maxlength="40" onkeydown="if(event.key==='Enter')sendFriendRequest()">
+                        <button class="start-btn friend-send" onclick="sendFriendRequest()">发送申请</button>
+                    </div>
+                </div>
+                <div class="friend-section">
+                    <h3 class="friend-cat">好友申请 <span class="friend-badge" id="friendReqBadge" style="display:none;">0</span></h3>
+                    <div id="friendReqList" class="friend-list"></div>
+                </div>
+                <div class="friend-section">
+                    <h3 class="friend-cat">我的好友 <span class="friend-count" id="friendCount">0</span></h3>
+                    <div id="friendList" class="friend-list"></div>
+                </div>
+                <div class="friend-section">
+                    <h3 class="friend-cat">收到的邀请</h3>
+                    <div id="friendInviteList" class="friend-list"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 排行榜页面 -->
+        <div id="leaderboardPage" class="page">
+            <div class="lobby-topbar">
+                <button class="back-btn-inline" onclick="switchHome('mainPage')">←</button>
+                <h2 class="lobby-title">🏆 积分排行榜</h2>
+                <span style="width:40px;display:inline-block;"></span>
+            </div>
+            <p class="lobby-subtitle">所有用户积分排名 · 前 100 名（由计分服务权威发布）</p>
+            <div id="leaderboardBody" class="leaderboard-body"></div>
         </div>
 
         <!-- 个人挑战页面 -->
@@ -1665,6 +1759,306 @@
         let lastMove = null;        // 最近一步落子坐标 {x, y}，用于绿色边框标记
         let moveLog = [];           // 本局落子序列 [{x, y, c}]，用于棋局回看
 
+        // ===== 社交系统（好友 / 在线状态 / 邀请 / 排行榜）=====
+        // 设计：沿用「公共 MQTT 中转、免服务器」架构——好友关系、申请、邀请、在线状态
+        // 全部通过 MQTT 保留消息（retained, qos1）在公共 broker 上存储/传递，无需新增中心服务；
+        // 仅「排行榜」因需要全量积分聚合，由计分服务（score-server）权威发布到 gomoku/leaderboard。
+        const FRIEND_REQ_PREFIX = 'gomoku/friend/req/';
+        const FRIEND_ACC_PREFIX = 'gomoku/friend/accept/';
+        const INVITE_PREFIX = 'gomoku/invite/';
+        const PRESENCE_PREFIX = 'gomoku/presence/';
+        const LEADERBOARD_TOPIC = 'gomoku/leaderboard';
+        const PRESENCE_TTL_GLOBAL = 25000;     // 全局好友在线判定阈值（ms）
+        const PRESENCE_PUB_INTERVAL = 10000;   // 全局在线心跳间隔（ms）
+        const SOCIAL_QOS = 1;
+
+        let friends = [];                 // [{user, nick}]
+        let pendingReqs = {};             // fromUser -> {from, fromNick, ts}
+        let pendingAccepts = {};          // fromUser -> {from, fromNick, ts}
+        let pendingInvites = {};          // fromUser -> {from, fromNick, room, isPrivate, password, ts}
+        let presenceMap = {};             // user -> {online, ts}
+        let globalPresenceTimer = null;
+        let leaderboardData = null;
+
+        function socialReady() {
+            return !!currentUser && currentUser !== 'guest' && !isAdminSession(currentUser);
+        }
+        function friendsKey() { return 'gomoku_friends_' + (currentUser || 'guest'); }
+        function loadFriends() {
+            try { const a = JSON.parse(localStorage.getItem(friendsKey())); if (Array.isArray(a)) return a; } catch (e) {}
+            return [];
+        }
+        function saveFriends(a) { try { localStorage.setItem(friendsKey(), JSON.stringify(a)); } catch (e) {} }
+        function addFriend(user, nick) {
+            friends = loadFriends().filter(f => f.user !== user);
+            friends.push({ user: user, nick: nick || user });
+            saveFriends(friends);
+            refreshFriendPresenceSubs();
+        }
+        function removeFriend(user) {
+            friends = loadFriends().filter(f => f.user !== user);
+            saveFriends(friends);
+        }
+        // 发布社交类保留消息（obj 为 '' 表示清除该保留消息）
+        function publishSocial(topic, obj) {
+            if (!mqttClient || !mqttClient.connected) return;
+            const payload = (obj === '' || obj == null) ? '' : JSON.stringify(obj);
+            try { mqttClient.publish(topic, payload, { qos: SOCIAL_QOS, retain: true }); } catch (e) {}
+        }
+        function subscribeSocialTopics() {
+            if (!mqttClient || !mqttClient.connected || !socialReady()) return;
+            const me = currentUser;
+            mqttClient.subscribe(FRIEND_REQ_PREFIX + me + '/+', { qos: SOCIAL_QOS });
+            mqttClient.subscribe(FRIEND_ACC_PREFIX + me + '/+', { qos: SOCIAL_QOS });
+            mqttClient.subscribe(INVITE_PREFIX + me + '/+', { qos: SOCIAL_QOS });
+            mqttClient.subscribe(LEADERBOARD_TOPIC, { qos: SOCIAL_QOS });
+            refreshFriendPresenceSubs();
+        }
+        function refreshFriendPresenceSubs() {
+            if (!mqttClient || !mqttClient.connected) return;
+            friends = loadFriends();
+            friends.forEach(f => mqttClient.subscribe(PRESENCE_PREFIX + f.user, { qos: SOCIAL_QOS }));
+        }
+        // 全局在线心跳
+        function startGlobalPresence() {
+            if (!socialReady()) return;
+            publishMyPresence(true);
+            if (globalPresenceTimer) return;
+            globalPresenceTimer = setInterval(() => publishMyPresence(true), PRESENCE_PUB_INTERVAL);
+        }
+        function publishMyPresence(online) {
+            if (!socialReady()) return;
+            publishSocial(PRESENCE_PREFIX + currentUser, { online: !!online, ts: Date.now() });
+        }
+        function publishMyPresenceOffline() {
+            if (!socialReady()) return;
+            publishSocial(PRESENCE_PREFIX + currentUser, { online: false, ts: Date.now() });
+        }
+        if (typeof window !== 'undefined') {
+            window.addEventListener('pagehide', publishMyPresenceOffline);
+            window.addEventListener('beforeunload', publishMyPresenceOffline);
+        }
+
+        // ===== 好友：发送申请 =====
+        function sendFriendRequest() {
+            if (!socialReady()) { showToast('请先登录账号'); return; }
+            const input = document.getElementById('friendInput');
+            const target = (input && input.value || '').trim();
+            if (!target) { showToast('请输入对方用户名'); return; }
+            if (target === currentUser) { showToast('不能添加自己为好友'); return; }
+            if (loadFriends().some(f => f.user === target)) { showToast('你们已经是好友了'); return; }
+            publishSocial(FRIEND_REQ_PREFIX + target + '/' + currentUser,
+                { from: currentUser, fromNick: myNickname || userProfile.nickname || currentUser, ts: Date.now() });
+            showToast('已向「' + target + '」发送好友申请');
+            if (input) input.value = '';
+        }
+        // ===== 处理收到的好友申请 =====
+        function handleFriendReqMsg(topic, payload) {
+            if (!socialReady()) return;
+            const me = currentUser;
+            const pfx = FRIEND_REQ_PREFIX + me + '/';
+            if (topic.indexOf(pfx) !== 0) return;
+            const from = topic.substring(pfx.length);
+            if (!payload || payload.length === 0) { delete pendingReqs[from]; renderFriendRequests(); return; }
+            let m; try { m = JSON.parse(payload.toString()); } catch (e) { return; }
+            if (!m || !m.from) return;
+            pendingReqs[from] = { from: m.from, fromNick: m.fromNick || m.from, ts: m.ts || Date.now() };
+            renderFriendRequests();
+        }
+        function acceptFriendRequest(from) {
+            const req = pendingReqs[from]; if (!req) return;
+            addFriend(from, req.fromNick);
+            publishSocial(FRIEND_ACC_PREFIX + from + '/' + currentUser,
+                { from: currentUser, fromNick: myNickname || userProfile.nickname || currentUser, ts: Date.now() });
+            publishSocial(FRIEND_REQ_PREFIX + currentUser + '/' + from, ''); // 清除对方发来的申请
+            delete pendingReqs[from];
+            renderFriendRequests(); renderFriends();
+            showToast('已添加 ' + (req.fromNick || from) + ' 为好友');
+        }
+        function rejectFriendRequest(from) {
+            publishSocial(FRIEND_REQ_PREFIX + currentUser + '/' + from, '');
+            delete pendingReqs[from];
+            renderFriendRequests();
+        }
+        // ===== 处理对方接受我的申请 =====
+        function handleFriendAcceptMsg(topic, payload) {
+            if (!socialReady()) return;
+            const me = currentUser;
+            const pfx = FRIEND_ACC_PREFIX + me + '/';
+            if (topic.indexOf(pfx) !== 0) return;
+            const from = topic.substring(pfx.length);
+            if (!payload || payload.length === 0) { delete pendingAccepts[from]; return; }
+            let m; try { m = JSON.parse(payload.toString()); } catch (e) { return; }
+            if (!m || !m.from) return;
+            addFriend(from, m.fromNick || from);
+            publishSocial(FRIEND_ACC_PREFIX + me + '/' + from, ''); // 清除
+            delete pendingAccepts[from];
+            renderFriends();
+            showToast((m.fromNick || from) + ' 已接受你的好友申请');
+        }
+        // ===== 邀请进入房间 =====
+        function inviteFriendToRoom(friendUser, friendNick) {
+            if (!socialReady()) { showToast('请先登录账号'); return; }
+            if (myRole) { showToast('你已在房间中，请先退出'); return; }
+            myNickname = myNickname || userProfile.nickname || currentUser;
+            createRoom(myNickname, false, '', myHostColor);
+            const room = currentRoom.number;
+            publishSocial(INVITE_PREFIX + friendUser + '/' + currentUser,
+                { from: currentUser, fromNick: myNickname, room: room, isPrivate: false, password: '', ts: Date.now() });
+            showToast('已邀请 ' + (friendNick || friendUser) + ' 加入房间 ' + room);
+        }
+        function handleInviteMsg(topic, payload) {
+            if (!socialReady()) return;
+            const me = currentUser;
+            const pfx = INVITE_PREFIX + me + '/';
+            if (topic.indexOf(pfx) !== 0) return;
+            const from = topic.substring(pfx.length);
+            if (!payload || payload.length === 0) { delete pendingInvites[from]; renderInvites(); return; }
+            let m; try { m = JSON.parse(payload.toString()); } catch (e) { return; }
+            if (!m || !m.from || !m.room) return;
+            pendingInvites[from] = { from: m.from, fromNick: m.fromNick || m.from, room: m.room, ts: m.ts || Date.now() };
+            renderInvites();
+        }
+        function acceptInvite(from) {
+            const inv = pendingInvites[from]; if (!inv) return;
+            publishSocial(INVITE_PREFIX + currentUser + '/' + from, '');
+            delete pendingInvites[from];
+            renderInvites();
+            if (myRole) { showToast('你已在房间中'); return; }
+            joinRoom(myNickname || userProfile.nickname || currentUser, inv.room, false, '');
+        }
+        // ===== 在线状态 =====
+        function handlePresenceMsg(topic, payload) {
+            if (topic.indexOf(PRESENCE_PREFIX) !== 0) return;
+            const user = topic.substring(PRESENCE_PREFIX.length);
+            let m; try { m = JSON.parse(payload.toString()); } catch (e) { presenceMap[user] = { online: false, ts: 0 }; updatePresenceDots(); return; }
+            presenceMap[user] = { online: !!(m && m.online), ts: (m && m.ts) || 0 };
+            updatePresenceDots();
+        }
+        function isFriendOnline(user) {
+            const p = presenceMap[user];
+            if (!p || !p.online) return false;
+            return (Date.now() - (p.ts || 0)) < PRESENCE_TTL_GLOBAL;
+        }
+        function updatePresenceDots() {
+            const dots = document.querySelectorAll('.friend-online-dot');
+            for (let i = 0; i < dots.length; i++) {
+                const u = dots[i].getAttribute('data-user');
+                if (u) dots[i].classList.toggle('on', isFriendOnline(u));
+            }
+        }
+        // ===== 渲染 =====
+        function renderFriendRequests() {
+            const list = document.getElementById('friendReqList');
+            if (!list) return;
+            const keys = Object.keys(pendingReqs);
+            const badge = document.getElementById('friendReqBadge');
+            if (badge) { badge.style.display = keys.length ? '' : 'none'; badge.textContent = keys.length; }
+            if (!keys.length) { list.innerHTML = '<p class="friend-empty">暂无新的好友申请</p>'; return; }
+            list.innerHTML = '';
+            keys.forEach(from => {
+                const r = pendingReqs[from];
+                const row = document.createElement('div');
+                row.className = 'friend-row';
+                row.innerHTML = '<span class="friend-name">' + socEscapeHtml(r.fromNick || from) + '</span>' +
+                    '<span class="friend-actions">' +
+                    '<button class="friend-btn ok" onclick="acceptFriendRequest(\'' + socEscAttr(from) + '\')">接受</button>' +
+                    '<button class="friend-btn no" onclick="rejectFriendRequest(\'' + socEscAttr(from) + '\')">拒绝</button>' +
+                    '</span>';
+                list.appendChild(row);
+            });
+        }
+        function renderFriends() {
+            friends = loadFriends();
+            const list = document.getElementById('friendList');
+            const cnt = document.getElementById('friendCount');
+            if (cnt) cnt.textContent = friends.length;
+            if (!list) return;
+            if (!friends.length) { list.innerHTML = '<p class="friend-empty">还没有好友，去添加吧～</p>'; return; }
+            list.innerHTML = '';
+            friends.forEach(f => {
+                const row = document.createElement('div');
+                row.className = 'friend-row';
+                const on = isFriendOnline(f.user);
+                row.innerHTML = '<span class="friend-online-dot ' + (on ? 'on' : '') + '" data-user="' + socEscAttr(f.user) + '"></span>' +
+                    '<span class="friend-name">' + socEscapeHtml(f.nick || f.user) + '</span>' +
+                    '<span class="friend-actions">' +
+                    '<button class="friend-btn" onclick="inviteFriendToRoom(\'' + socEscAttr(f.user) + '\',\'' + socEscAttr(f.nick || f.user) + '\')">邀请对局</button>' +
+                    '</span>';
+                list.appendChild(row);
+            });
+        }
+        function renderInvites() {
+            const list = document.getElementById('friendInviteList');
+            if (!list) return;
+            const keys = Object.keys(pendingInvites);
+            if (!keys.length) { list.innerHTML = '<p class="friend-empty">暂无邀请</p>'; return; }
+            list.innerHTML = '';
+            keys.forEach(from => {
+                const inv = pendingInvites[from];
+                const row = document.createElement('div');
+                row.className = 'friend-row';
+                row.innerHTML = '<span class="friend-name">' + socEscapeHtml(inv.fromNick || from) + ' 邀请你加入房间 ' + socEscapeHtml(inv.room) + '</span>' +
+                    '<span class="friend-actions">' +
+                    '<button class="friend-btn ok" onclick="acceptInvite(\'' + socEscAttr(from) + '\')">加入</button>' +
+                    '</span>';
+                list.appendChild(row);
+            });
+        }
+        // 进入好友页初始化
+        function initFriends() {
+            if (!socialReady()) {
+                const gate = document.getElementById('friendGate');
+                const body = document.getElementById('friendBody');
+                if (gate) gate.style.display = '';
+                if (body) body.style.display = 'none';
+                return;
+            }
+            const gate = document.getElementById('friendGate');
+            const body = document.getElementById('friendBody');
+            if (gate) gate.style.display = 'none';
+            if (body) body.style.display = '';
+            friends = loadFriends();
+            refreshFriendPresenceSubs();
+            renderFriendRequests(); renderFriends(); renderInvites(); updatePresenceDots();
+        }
+        // ===== 排行榜 =====
+        function loadLeaderboard() {
+            if (mqttClient && mqttClient.connected) mqttClient.subscribe(LEADERBOARD_TOPIC, { qos: SOCIAL_QOS });
+            renderLeaderboard();
+        }
+        function handleLeaderboardMsg(payload) {
+            try { leaderboardData = JSON.parse(payload.toString()); } catch (e) { return; }
+            renderLeaderboard();
+        }
+        function renderLeaderboard() {
+            const el = document.getElementById('leaderboardBody');
+            if (!el) return;
+            if (!leaderboardData) {
+                el.innerHTML = '<p class="leaderboard-empty">正在等待计分服务发布排行榜…<br>（若长时间无数据，说明计分服务未运行）</p>';
+                return;
+            }
+            if (!Array.isArray(leaderboardData) || !leaderboardData.length) {
+                el.innerHTML = '<p class="leaderboard-empty">暂无积分数据</p>';
+                return;
+            }
+            let html = '<div class="lb-head"><span class="lb-rank">排名</span><span class="lb-name">玩家</span><span class="lb-rating">积分</span><span class="lb-games">对局</span></div>';
+            leaderboardData.forEach(r => {
+                const me = (socialReady() && r.uid === currentUser) ? ' me' : '';
+                html += '<div class="lb-row' + me + '">' +
+                    '<span class="lb-rank">' + r.rank + '</span>' +
+                    '<span class="lb-name">' + socEscapeHtml(r.uid) + '</span>' +
+                    '<span class="lb-rating">' + r.rating + '</span>' +
+                    '<span class="lb-games">' + (r.games || 0) + '</span></div>';
+            });
+            el.innerHTML = html;
+        }
+        // 小工具
+        function socEscapeHtml(s) {
+            return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+        }
+        function socEscAttr(s) { return socEscapeHtml(s).replace(/'/g, '&#39;'); }
+
         // ===== 房间存活 / 在线状态监测 =====
         const ROOM_TTL = 20000;            // 大厅房间存活时间：超过该时间未刷新心跳则视为已解散（仅 MQTT 模式生效）
         const PRESENCE_INTERVAL = 4000;    // 房间内在线心跳间隔（ms）
@@ -1846,6 +2240,8 @@
                 mqttClient.subscribe('gomoku/lobby/+', { qos: 0 }, () => { lobbySubscribed = true; });
                 // 计分服务回写主题（常驻订阅，结算结果随时认领）
                 mqttClient.subscribe(SCORE_RESP_TOPIC, { qos: 0 });
+                // 社交系统（好友/邀请/在线状态/排行榜）主题订阅
+                if (socialReady()) { subscribeSocialTopics(); startGlobalPresence(); }
                 // 若已进入具体房间，订阅房间主题并触发对局逻辑
                 if (currentRoom.key) {
                     mqttClient.subscribe(roomTopic(), { qos: 0 }, () => afterRoomConnect());
@@ -1858,6 +2254,12 @@
                     handleScoreResp(sp);
                     return;
                 }
+                // 社交系统消息（好友申请 / 接受 / 邀请 / 在线状态 / 排行榜）
+                if (t.indexOf(FRIEND_REQ_PREFIX) === 0) { handleFriendReqMsg(t, payload); return; }
+                if (t.indexOf(FRIEND_ACC_PREFIX) === 0) { handleFriendAcceptMsg(t, payload); return; }
+                if (t.indexOf(INVITE_PREFIX) === 0) { handleInviteMsg(t, payload); return; }
+                if (t.indexOf(PRESENCE_PREFIX) === 0) { handlePresenceMsg(t, payload); return; }
+                if (t === LEADERBOARD_TOPIC) { handleLeaderboardMsg(payload); return; }
                 if (currentRoom.key && t === roomTopic()) {
                     let msg; try { msg = JSON.parse(payload.toString()); } catch (e) { return; }
                     handleMqttMsg(msg);
@@ -3577,7 +3979,17 @@
             document.querySelectorAll('.page').forEach(page => page.classList.remove('active'));
             const target = document.getElementById(targetPageId);
             if (target) target.classList.add('active');
+            // 三标签页（主页/好友/排行榜）共享顶部导航
+            const homeTabs = document.getElementById('homeTabs');
+            if (homeTabs) homeTabs.style.display = (['mainPage', 'friendPage', 'leaderboardPage'].indexOf(targetPageId) >= 0) ? '' : 'none';
             if (targetPageId === 'challengePage') chRenderGrids();
+            if (targetPageId === 'friendPage') initFriends();
+            if (targetPageId === 'leaderboardPage') loadLeaderboard();
+        }
+        // 三标签页切换（同步高亮导航按钮）
+        function switchHome(pageId) {
+            switchPage(pageId);
+            document.querySelectorAll('#homeTabs .home-tab').forEach(b => b.classList.toggle('active', b.getAttribute('data-page') === pageId));
         }
 
         // 个人挑战：展开/收起学习卡片（点击卡片头部切换 .open）
@@ -5091,6 +5503,9 @@
         function enterApp() {
             applyProfile();
             updateUserBadge();
+            // 登录后启动社交系统：订阅好友/邀请/在线状态/排行榜主题，并开始全局在线心跳
+            subscribeSocialTopics();
+            startGlobalPresence();
             switchPage('mainPage');
         }
 
