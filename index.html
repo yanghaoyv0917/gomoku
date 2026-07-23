@@ -1449,7 +1449,7 @@
             </div>
             <div class="replay-chart-wrap" id="replayChartWrap">
                 <div class="replay-chart-title">
-                    <span class="chart-title-main">AI预测胜率 <b id="replayMyVal">—</b><span class="chart-sub">（蒙特卡洛模拟）</span></span>
+                    <span class="chart-title-main">AI预测胜率 · 我方 <b id="replayMyVal">—</b> / 对手 <b id="replayOppVal">—</b><span class="chart-sub">（蒙特卡洛模拟）</span></span>
                     <span class="chart-legend"><i class="dot dot-my"></i>我方 <i class="dot dot-opp"></i>对手</span>
                 </div>
                 <canvas id="replayChart" class="replay-chart-canvas"></canvas>
@@ -4140,7 +4140,7 @@
             document.getElementById('replayMeta').textContent =
                 (game.mode === 'ai' ? '人机' : '联机') + ' · 对手 ' + (game.opponent || '—') + ' · 结果 ' + resText;
             document.getElementById('replayModal').classList.add('active');
-            applyReplayTo(0);
+            try { applyReplayTo(0); } catch (e) { console.error('回看初始绘制异常（不影响胜率模拟）', e); }
             // 分块 AI 模拟，避免阻塞 UI；完成后用完整序列重绘图表
             computeReplaySeries(stepBoards, replayMyColor, REPLAY_ROLLOUTS,
                 function (done, total, elapsedMs) { loadingEl.textContent = 'AI 模拟棋局中… ' + done + '/' + total + '（已用 ' + Math.round((elapsedMs || 0) / 1000) + 's）'; },
@@ -4200,7 +4200,7 @@
             const myVal = document.getElementById('replayMyVal');
             const oppVal = document.getElementById('replayOppVal');
             const N = replayMoves.length;
-            if (N === 0 || uptoIdx <= 0 || !replayProbSeries.length) { myVal.textContent = '—'; oppVal.textContent = '—'; return; }
+            if (N === 0 || uptoIdx <= 0 || !replayProbSeries.length) { if (myVal) myVal.textContent = '—'; if (oppVal) oppVal.textContent = '—'; return; }
             const xAt = function (i) { return N <= 1 ? padL + plotW / 2 : padL + plotW * ((i - 1) / (N - 1)); };
             const yAt = function (v) { return padT + plotH * (1 - v / 100); };
             // 我方胜率线（蓝色实线）
@@ -4225,8 +4225,8 @@
                 const x = xAt(uptoIdx);
                 c.beginPath(); c.arc(x, yAt(cur.my), 4.5, 0, Math.PI * 2); c.fillStyle = '#2f6fed'; c.fill();
                 c.beginPath(); c.arc(x, yAt(cur.opp), 4.5, 0, Math.PI * 2); c.fillStyle = '#9b9b9b'; c.fill();
-                myVal.textContent = cur.my.toFixed(1) + '%';
-                oppVal.textContent = cur.opp.toFixed(1) + '%';
+                if (myVal) myVal.textContent = cur.my.toFixed(1) + '%';
+                if (oppVal) oppVal.textContent = cur.opp.toFixed(1) + '%';
             }
         }
         function replayNext() { if (replayIdx < replayMoves.length) applyReplayTo(replayIdx + 1); }
