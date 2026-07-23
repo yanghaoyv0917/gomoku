@@ -16,7 +16,11 @@
  *
  * 运行：
  *   cd server && npm install && node score-server.js
- * 也可用环境变量覆盖：BROKER / D / FLOOR / PORT(忽略)
+ * 环境变量（均可选）：BROKER / D / FLOOR / GITHUB_TOKEN / GITHUB_OWNER /
+ *   GITHUB_REPO / GITHUB_RATINGS_PATH / GITHUB_BRANCH
+ *   设置 GITHUB_TOKEN 后，每局结算会把全量 ratings 同步进仓库
+ *   ${GITHUB_RATINGS_PATH}，排行榜数据即「记录在 GitHub 库中」。
+ *   未设置 GITHUB_TOKEN 时，仅本地 + MQTT 保留（排行榜仍可经 MQTT 消费）。
  */
 
 'use strict';
@@ -33,6 +37,13 @@ const REQ_TOPIC = 'gomoku/score/req';
 const RESP_TOPIC = 'gomoku/score/resp';
 const LEADERBOARD_TOPIC = 'gomoku/leaderboard'; // 排行榜：服务端权威发布 top100（retained）
 const LEADERBOARD_LIMIT = 100;
+// GitHub 持久化：把 ratings 同步进仓库，让排行榜数据「记录在 GitHub 库中」
+const GITHUB_TOKEN = process.env.GITHUB_TOKEN || '';
+const GITHUB_OWNER = process.env.GITHUB_OWNER || 'yanghaoyv0917';
+const GITHUB_REPO = process.env.GITHUB_REPO || 'gomoku';
+const GITHUB_RATINGS_PATH = process.env.GITHUB_RATINGS_PATH || 'data/ratings.json';
+const GITHUB_BRANCH = process.env.GITHUB_BRANCH || 'main';
+const GH_API = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents`;
 const RATINGS_FILE = path.join(__dirname, 'ratings.json');
 const SEEN_FILE = path.join(__dirname, 'seen.json');
 const LOCK_FILE = path.join(__dirname, '.server.lock'); // 单实例锁，防止双实例重复结算
@@ -60,6 +71,7 @@ function loadStore() {
 }
 function saveRatings() {
   try { fs.writeFileSync(RATINGS_FILE, JSON.stringify(ratings, null, 2)); } catch (e) { console.error('[store] ratings 写入失败', e.message); }
+  scheduleGithubPush();
 }
 function markSeen(id) {
   seen[id] = true;
@@ -132,6 +144,77 @@ function publishLeaderboard() {
   }
 }
 
+// ---------- GitHub 入库（排行榜数据源）----------
+// 把全量 ratings 同步进仓库的 data/ratings.json，让排行榜数据「记录在 GitHub 库中」。
+// 客户端直接拉取该文件即可制作排行榜，无需依赖运行中的 MQTT 服务。
+let ghPushTimer = null;
+let ghDirty = false;
+
+function ghHeaders() {
+  return {
+    'Authorization': `Bearer ${GITHUB_TOKEN}`,
+    'User-Agent': 'gomoku-score-server',
+    'Accept': 'application/vnd.github+json',
+    'Content-Type': 'application/json'
+  };
+}
+
+async function pushRatingsToGithub() {
+  if (!GITHUB_TOKEN) {
+    console.warn('[github] 未设置 GITHUB_TOKEN 环境变量，跳过仓库同步（仅本地 + MQTT 保留）。');
+    return;
+  }
+  try {
+    const content = JSON.stringify(ratings, null, 2);
+    const b64 = Buffer.from(content, 'utf8').toString('base64');
+    // 取已有 sha（文件可能尚不存在）
+    let sha = null;
+    try {
+      const r = await fetch(`${GH_API}/${GITHUB_RATINGS_PATH}?ref=${GITHUB_BRANCH}`, { headers: ghHeaders() });
+      if (r.ok) { const j = await r.json(); sha = j.sha; }
+    } catch (e) { /* 文件不存在时忽略 */ }
+    const body = { message: 'chore: 同步积分排行数据 ratings.json', content: b64, branch: GITHUB_BRANCH };
+    if (sha) body.sha = sha;
+    const r = await fetch(`${GH_API}/${GITHUB_RATINGS_PATH}`, {
+      method: 'PUT', headers: ghHeaders(), body: JSON.stringify(body)
+    });
+    if (r.ok) console.log('[github] 已同步 ratings.json 到仓库', `(${Object.keys(ratings).length} 名用户)`);
+    else { const t = await r.text(); console.error('[github] 同步失败', r.status, t.slice(0, 200)); }
+  } catch (e) {
+    console.error('[github] 同步异常', e.message);
+  }
+}
+
+// 结算后 5s 内合并多次写，再统一推送一次，避免高频对局频繁打 GitHub API
+function scheduleGithubPush() {
+  ghDirty = true;
+  if (ghPushTimer) return;
+  ghPushTimer = setTimeout(() => {
+    ghPushTimer = null;
+    if (ghDirty) { ghDirty = false; pushRatingsToGithub(); }
+  }, 5000);
+}
+
+// 启动引导：本地空表时，从仓库 data/ratings.json 拉取作为权威初始数据（GitHub 为真相源）
+async function bootstrapFromGithub() {
+  if (Object.keys(ratings).length > 0) return;
+  const ctrl = new AbortController();
+  const to = setTimeout(() => ctrl.abort(), 5000);
+  try {
+    const url = `https://raw.githubusercontent.com/${GITHUB_OWNER}/${GITHUB_REPO}/${GITHUB_BRANCH}/${GITHUB_RATINGS_PATH}`;
+    const r = await fetch(url, { signal: ctrl.signal });
+    if (r.ok) {
+      const obj = await r.json();
+      if (obj && typeof obj === 'object' && !Array.isArray(obj)) {
+        ratings = obj;
+        saveRatings();
+        console.log('[github] 从仓库引导 ratings 数据', Object.keys(ratings).length, '条');
+      }
+    }
+  } catch (e) { console.warn('[github] 引导失败（使用本地空表）', e.message); }
+  finally { clearTimeout(to); }
+}
+
 // ---------- 单实例锁 ----------
 // 防止误启动两个服务实例（双实例会导致同一局被重复结算、下发两条 resp）。
 function acquireLock() {
@@ -159,8 +242,9 @@ function releaseLock() {
 
 // ---------- MQTT ----------
 let client = null; // 模块级 MQTT 客户端（publishLeaderboard 等函数需要引用）
-function start() {
+async function start() {
   loadStore();
+  await bootstrapFromGithub();
   client = mqtt.connect(BROKER, {
     clientId: 'gomoku_score_server_' + Math.random().toString(16).slice(2, 10),
     reconnectPeriod: 2000,
@@ -218,10 +302,15 @@ function start() {
   client.on('error', (e) => console.error('[mqtt] error', e.message));
   client.on('close', () => console.log('[mqtt] 连接断开，等待自动重连...'));
 
-  // 优雅退出时落盘并释放锁
-  const flush = () => { saveRatings(); releaseLock(); process.exit(0); };
-  process.on('SIGINT', flush);
-  process.on('SIGTERM', flush);
+  // 优雅退出时落盘并释放锁（确保 GitHub 同步完成）
+  const flush = async () => {
+    saveRatings();
+    if (ghDirty) { ghDirty = false; await pushRatingsToGithub(); }
+    releaseLock();
+    process.exit(0);
+  };
+  process.on('SIGINT', () => { flush(); });
+  process.on('SIGTERM', () => { flush(); });
   process.on('exit', releaseLock);
 }
 
