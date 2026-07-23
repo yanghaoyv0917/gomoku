@@ -3542,9 +3542,15 @@
         function chLoadProgress() {
             try {
                 const raw = localStorage.getItem(CH_PROGRESS_KEY);
-                if (raw) { const p = JSON.parse(raw); if (p && Array.isArray(p.done)) return p; }
+                if (raw) {
+                    const p = JSON.parse(raw);
+                    if (p && Array.isArray(p.done)) {
+                        p.unlockedMax = CH_TOTAL;  // 全部解锁：关卡可直接进入，无需逐关通关
+                        return p;
+                    }
+                }
             } catch (e) {}
-            return { done: [], unlockedMax: 1 };
+            return { done: [], unlockedMax: CH_TOTAL };
         }
         function chSaveProgress() {
             try { localStorage.setItem(CH_PROGRESS_KEY, JSON.stringify(chProgress)); } catch (e) {}
