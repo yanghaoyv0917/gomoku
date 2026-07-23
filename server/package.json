@@ -1,0 +1,12 @@
+{
+  "name": "gomoku-score-server",
+  "version": "1.0.0",
+  "description": "五子棋联机对战积分计分服务（Elo 服务端权威结算，经 MQTT 计分主题）",
+  "main": "score-server.js",
+  "scripts": {
+    "start": "node score-server.js"
+  },
+  "dependencies": {
+    "mqtt": "^5.15.2"
+  }
+}
