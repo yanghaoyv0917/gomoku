@@ -1582,7 +1582,7 @@
         let myColor = null;         // 1=黑 | 2=白（双方进房后随机分配）
         let myAvatar = null;        // 本机随机头像（emoji 或本地图片 data URL）
         let oppAvatar = null;       // 对手头像（emoji）
-        let userProfile = { avatar: null, nickname: null, points: 1000 }; // 个人信息（按用户名存 localStorage）
+        let userProfile = { avatar: null, nickname: null, points: 1500 }; // 个人信息（按用户名存 localStorage）
         let avatarOf = {};          // { 1: 黑方头像, 2: 白方头像 } 供棋盘绘制使用
 
         // 连接状态
@@ -1618,6 +1618,48 @@
         let aiDifficulty = 1;       // 当前 AI 难度（1~9）
         let aiThinkingTimer = null; // AI 思考延时定时器
         let moveTimer = null;        // 联机每步限时计时器（setTimeout）
+
+        // ===== 联机积分（服务端权威，经 MQTT 计分主题结算） =====
+        // 客户端只负责上报赛果，真正算分与积分存储由独立常驻的「计分服务」完成，
+        // 避免本地篡改。计分服务连接同一公共 MQTT broker，订阅 gomoku/score/req，
+        // 结算后回写 gomoku/score/resp，两端按 matchNonce 认领本局积分。
+        const SCORE_REQ_TOPIC = 'gomoku/score/req';
+        const SCORE_RESP_TOPIC = 'gomoku/score/resp';
+        let pendingScoreGameId = null;
+        function newMatchNonce() { return Math.random().toString(36).slice(2, 10) + Date.now().toString(36); }
+        // 对局结束：仅向服务端「上报赛果」，由服务端权威结算积分（不直接记账，记账统一由调用点的 recordGame 完成）
+        function reportOnlineResult(myResult) {
+            if (vsAi || myRole === 'spectator') return;
+            if (!currentUser || currentUser === 'guest' || !currentRoom || !currentRoom.matchNonce) return;
+            const oppUid = (myRole === 'host') ? currentRoom.guestUid : currentRoom.hostUid;
+            if (!oppUid || oppUid === 'guest') return;   // 对手无账号则不计分
+            const winnerUid = (myResult === 'win') ? currentUser : (myResult === 'lose' ? oppUid : '');
+            pendingScoreGameId = currentRoom.matchNonce;
+            try {
+                if (mqttClient && mqttClient.connected) {
+                    mqttClient.publish(SCORE_REQ_TOPIC, JSON.stringify({
+                        gameId: currentRoom.matchNonce, a: currentUser, b: oppUid, winner: winnerUid
+                    }), { qos: 0 });
+                }
+            } catch (e) {}
+        }
+        // 服务端回写的权威结算结果
+        function handleScoreResp(payload) {
+            if (!payload || !payload.gameId || payload.gameId !== pendingScoreGameId) return;
+            const ratings = payload.ratings || {};
+            const deltas = payload.deltas || {};
+            const myNew = ratings[currentUser];
+            const myDelta = deltas[currentUser];
+            if (typeof myNew === 'number') {
+                userProfile.points = myNew;
+                saveProfileToStore(userProfile);
+                const pe = document.getElementById('profilePoints');
+                if (pe) pe.textContent = myNew;
+                if (typeof myDelta === 'number' && myDelta !== 0) {
+                    showToast((myDelta > 0 ? '积分 +' : '积分 ') + myDelta + ' → ' + myNew);
+                }
+            }
+        }
         let moveCountdownTimer = null; // 倒计时显示刷新计时器（setInterval）
         let moveDeadline = 0;        // 当前回合截止时间戳（ms）
         let lastMove = null;        // 最近一步落子坐标 {x, y}，用于绿色边框标记
@@ -1802,6 +1844,8 @@
             mqttClient.on('connect', () => {
                 // 大厅主题常驻订阅（进入大厅即可看到所有房间）
                 mqttClient.subscribe('gomoku/lobby/+', { qos: 0 }, () => { lobbySubscribed = true; });
+                // 计分服务回写主题（常驻订阅，结算结果随时认领）
+                mqttClient.subscribe(SCORE_RESP_TOPIC, { qos: 0 });
                 // 若已进入具体房间，订阅房间主题并触发对局逻辑
                 if (currentRoom.key) {
                     mqttClient.subscribe(roomTopic(), { qos: 0 }, () => afterRoomConnect());
@@ -1809,6 +1853,11 @@
             });
             mqttClient.on('message', (t, payload) => {
                 if (t.indexOf('gomoku/lobby/') === 0) { handleLobbyMsg(t, payload); return; }
+                if (t === SCORE_RESP_TOPIC) {
+                    let sp; try { sp = JSON.parse(payload.toString()); } catch (e) { return; }
+                    handleScoreResp(sp);
+                    return;
+                }
                 if (currentRoom.key && t === roomTopic()) {
                     let msg; try { msg = JSON.parse(payload.toString()); } catch (e) { return; }
                     handleMqttMsg(msg);
@@ -1835,6 +1884,7 @@
                 if (roomReady) {
                     publishRoomState(currentRoomStatus); // 刷新大厅存活时间戳
                     mqttPublish({ type: 'start', hostIsBlack: (myColor === 1),
+                        uid: currentUser, matchNonce: currentRoom.matchNonce,
                         host: { nickname: myNickname, avatar: myAvatar },
                         guest: { nickname: currentRoom.guestNickname, avatar: currentRoom.guestAvatar } });
                 }
@@ -1848,7 +1898,7 @@
                 showSelfCard(myNickname, myAvatar, '客人');
                 updateWaitingText('⏳ 正在连接房主...');
                 // 发送 join：若房主实时在线会在时限内回应 start；否则由看门狗判定“房间不存在”
-                mqttPublish({ type: roomReady ? 'rejoin' : 'join', nickname: myNickname, avatar: myAvatar });
+                mqttPublish({ type: roomReady ? 'rejoin' : 'join', nickname: myNickname, avatar: myAvatar, uid: currentUser });
                 startGuestRetry();
                 startJoinWatchdog();
             }
@@ -2148,8 +2198,10 @@
                         if (!roomReady) {
                             if (myAvatar === msg.avatar) myAvatar = randomAvatar(msg.avatar);
                             currentRoom.guestNickname = msg.nickname;
+                            currentRoom.guestUid = msg.uid;          // 记录对手账号（用于服务端算分）
                             currentRoom.guestAvatar = msg.avatar;
                             currentRoom.hostAvatar = myAvatar;
+                            currentRoom.matchNonce = newMatchNonce(); // 新对局唯一标识（两端共用，服务端按此去重）
                             // 按房主执棋偏好决定黑白：black/white 固定，random 随机
                             let hostIsBlack;
                             if (myHostColor === 'black') hostIsBlack = true;
@@ -2164,6 +2216,7 @@
                         }
                         // 不论首次还是重连，都向客人下发 start（客人收到后不重置棋盘）
                         mqttPublish({ type: 'start', hostIsBlack: (myColor === 1),
+                            uid: currentUser, matchNonce: currentRoom.matchNonce,
                             host: { nickname: myNickname, avatar: myAvatar },
                             guest: { nickname: currentRoom.guestNickname, avatar: currentRoom.guestAvatar } });
                     }
@@ -2195,6 +2248,8 @@
                         clearJoinWatchdog(); // 房主已实时回应 → 房间确实存在
                         currentRoom.hostNickname = msg.host.nickname;
                         currentRoom.guestNickname = msg.guest.nickname;
+                        currentRoom.hostUid = msg.uid;            // 记录对手账号（用于服务端算分）
+                        currentRoom.matchNonce = msg.matchNonce;  // 本局唯一标识（与服务端去重一致）
                         currentRoom.hostAvatar = msg.host.avatar;
                         currentRoom.guestAvatar = msg.guest.avatar;
                         oppAvatar = msg.host.avatar;
@@ -2599,6 +2654,7 @@
                 updateTurnIndicator();
                 showToast(currentPlayer === myColor ? '🎉 你赢了！' : '你输了');
                 recordGame(currentPlayer === myColor ? 'win' : 'lose', vsAi ? 'ai' : 'online', oppName());
+                if (!vsAi) reportOnlineResult(currentPlayer === myColor ? 'win' : 'lose'); // 上报服务端结算积分
                 if (!vsAi && myRole === 'host') publishRoomState('finished'); // 同步大厅状态
                 return;
             }
@@ -2633,6 +2689,7 @@
                 } else {
                     showToast(player === myColor ? '🎉 你赢了！' : '对手获胜');
                     recordGame(player === myColor ? 'win' : 'lose', vsAi ? 'ai' : 'online', oppName());
+                    reportOnlineResult(player === myColor ? 'win' : 'lose'); // 上报服务端结算积分
                     if (myRole === 'host') publishRoomState('finished'); // 同步大厅状态
                 }
                 return;
@@ -2890,6 +2947,7 @@
             const iWon = (loser !== myColor);
             showToast(iWon ? '⏰ 对手超时，你赢了！' : '⏰ 你超时了，判负');
             recordGame(iWon ? 'win' : 'lose', 'online', oppName());
+            reportOnlineResult(iWon ? 'win' : 'lose'); // 上报服务端结算积分
             if (myRole === 'host') publishRoomState('finished'); // 同步大厅状态
         }
 
@@ -5436,7 +5494,7 @@
         function applyProfile() {
             const p = loadProfile();
             userProfile = (p && typeof p === 'object') ? p : {};
-            if (userProfile.points == null) userProfile.points = 1000;
+            if (userProfile.points == null) userProfile.points = 1500;
             if (!userProfile.nickname) userProfile.nickname = currentUser || '玩家';
             // 头像：仅当用户在个人信息面板手动选择/上传过（avatarLocked）才保留固定头像；
             // 否则每次登录随机分配一个新头像，让登录后的头像随机变化
@@ -5452,7 +5510,7 @@
         function openProfilePanel() {
             applyProfile();
             document.getElementById('profileUsername').textContent = '@' + (currentUser || '玩家');
-            document.getElementById('profilePoints').textContent = userProfile.points || 1000;
+            document.getElementById('profilePoints').textContent = userProfile.points || 1500;
             document.getElementById('profileNickname').value = userProfile.nickname || '';
             renderAvatarEl(document.getElementById('profileAvatarBig'), userProfile.avatar);
             const picker = document.getElementById('avatarPicker');
@@ -5515,7 +5573,7 @@
             if (!nn) { showToast('昵称不能为空'); return; }
             if (nn.length > 12) { showToast('昵称最多 12 字'); return; }
             userProfile.nickname = nn;
-            userProfile.points = userProfile.points || 1000;
+            userProfile.points = userProfile.points || 1500;
             saveProfileToStore(userProfile);
             myNickname = nn;
             myAvatar = userProfile.avatar;
