@@ -2087,15 +2087,29 @@
                 if (!leaderboardData && el) el.innerHTML = '<p class="leaderboard-empty">暂无排行数据（计分服务尚未产生对局，或无法访问仓库）。<br>可在好友对局后点右上角 ⟳ 刷新查看。</p>';
             }));
         }
-        // MQTT 排行榜信号（服务端发布的刷新 ping）：直接依据仓库用户数据重拉并刷新
+        // MQTT 实时榜单（服务端直接推送 top100 用户数据）：收到即渲染，无需回源 GitHub
         function handleLeaderboardMsg(payload) {
             try {
                 const p = JSON.parse(payload.toString());
-                if (p && p.updated) fetchGitHubLeaderboard();
+                if (p && Array.isArray(p.users)) { applyLeaderboard(p.users); return; } // 实时榜单：直推数据
+                if (p && p.updated) fetchGitHubLeaderboard(); // 旧格式/兜底：回源 GitHub
             } catch (e) {}
         }
-        // 归一化：支持仓库「个人用户数据」格式 {uid:{uid,nick,avatar,rating,games,wins}}
+        // 归一化：支持两种格式
+        //  - 服务端 MQTT 实时直推的数组 [{uid,nick,avatar,rating,games,wins}]（已排序 top100）
+        //  - 仓库「个人用户数据」对象 {uid:{uid,nick,avatar,rating,games,wins}}
         function normalizeLeaderboard(data) {
+            if (Array.isArray(data)) {
+                return data.slice(0, 100).map((u, i) => ({
+                    rank: i + 1,
+                    uid: u.uid,
+                    nick: u.nick || u.uid,
+                    avatar: u.avatar || '',
+                    rating: Number(u.rating) || 0,
+                    games: Number(u.games) || 0,
+                    wins: Number(u.wins) || 0
+                }));
+            }
             let arr;
             if (data && typeof data === 'object' && !Array.isArray(data)) {
                 arr = Object.keys(data).map(uid => {
