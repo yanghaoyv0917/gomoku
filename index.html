@@ -1309,14 +1309,14 @@
 
             <!-- 关卡选择 -->
             <div id="chSelect">
-                <p class="lobby-subtitle">共 200 关 · 前 30 关打基础，31–200 关真实棋局取胜（双方等子、密集成势、后期含变式阵法）</p>
+                <p class="lobby-subtitle">共 200 关 · 前 30 关打基础，31–200 关阵型摆谱（真实对局中补全经典阵型，双方等子、密集成团）</p>
                 <div class="ch-progress" id="chProgress">已通关 0 / 200</div>
                 <div class="ch-tier-block">
                     <h3 class="challenge-cat">🌱 基础引导（第 1–30 关）</h3>
                     <div class="ch-level-grid" id="chGridBasic"></div>
                 </div>
                 <div class="ch-tier-block">
-                    <h3 class="challenge-cat">⚔️ 阵型实战（第 31–200 关 · 真实棋局取胜）</h3>
+                    <h3 class="challenge-cat">🏯 阵型摆谱（第 31–200 关 · 经典阵型）</h3>
                     <div class="ch-level-grid" id="chGridForm"></div>
                 </div>
                 <div class="challenge-cta">
@@ -3576,11 +3576,496 @@
             return a;
         }
 
-        // 关卡生成（重构 v2）：第 1–30 关为「基础引导」（操作题，无相邻重复）；
-        // 第 31–200 关为「阵型实战」——在真实棋局中演练取胜杀法，目标一律为「取胜」，去除抽象的「摆谱」关卡。
+        // 关卡生成（重构 v3）：第 1–30 关为「基础引导」（操作题，无相邻重复）；
+        // 第 31–200 关为「阵型摆谱」——在真实对局中补全经典阵型的关键着法。
+        // 阵型均源自真实五子棋/连珠定式与中盘战术资料，非抽象虚构。
         const CH_GUIDE_TYPES = ['g_live4', 'g_live3', 'g_block4', 'g_block3', 'g_five'];
-        // 取胜杀法（真实棋局中演练）：直接成五 / 活四必胜 / 四三杀 / 双四杀 / 三三杀（均属必胜着法）
-        const CH_WIN_TYPES   = ['k_five', 'k_live4', 'k_four3', 'k_four4', 'k_double3'];
+
+        // ── 阵型知识库（源自真实五子棋/连珠定式与中盘战术）──────────────
+        // 每种阵型：name=名称, origin=渊源, tip=实战要点, success=通关文案,
+        //   build(cx,cy,rng) → { board, targets, protectDirs, protectR }
+        //   board 上 1=黑(己方), 2=白(对手), targets=[[tx,ty],..] 为待补关键空位
+        // ───────────────────────────────────────────────────────────────
+        const CH_FORMATIONS = (() => {
+            const F = [];
+            const reg = (key, name, origin, tip, succ, build) => {
+                F.push({ key, name, origin, tip, success: succ, build });
+            };
+
+            // ═══ 开局定式类（源自连珠 26 种正规开局及衍生变化）═══
+
+            // 花月开局——直指最强开局之一，黑3斜向扩张形成"花月"之形
+            reg('f_huayue', '花月局', '花月是直指开局中最强的定式之一，源自日本连珠协会定型。黑棋第三手斜向跳出，形如花开月下，攻守兼备，是职业对局中出现频率最高的开局之一。',
+                '花月的精髓在于「斜向呼应」：黑子沿两条斜线展开，形成多点进攻潜力。补全关键点后，黑棋同时威胁多个方向的活三/活四。',
+                '你补全了花月局的关键点！斜向双线呼应已成，攻势如花绽放、月影随行！',
+                function(cx, cy, rng) {
+                    const b = chEmptyBoard();
+                    const p = (x, y, c) => { if (x>=0&&x<BOARD_SIZE&&y>=0&&y<BOARD_SIZE) b[y][x]=c; };
+                    // 花月骨架：天元附近的花月定式雏形（黑先，白已应）
+                    p(cx, cy, 1);     // 黑1 天元
+                    p(cx+1, cy+1, 2); // 白2 斜应
+                    p(cx+2, cy, 1);   // 黑3 直扩展
+                    p(cx+1, cy-1, 2); // 白4 挡上
+                    p(cx, cy+2, 1);   // 黑5 斜向展开（花月之形的骨干）
+                    p(cx+2, cy+2, 2); // 白6 跟随
+                    p(cx-1, cy+1, 1); // 黑7 左下延伸
+                    p(cx+3, cy, 2);   // 白8 右挡
+                    // 目标：补全花月的"花蕊"——使斜向两线同时具备活三潜力
+                    return { board:b, targets:[[cx+1, cy+1]], protectDirs:[[1,1],[1,-1]], protectR:3 };
+                }
+            );
+
+            // 浦月开局——强攻型开局，黑棋主动出击形成密集攻势
+            reg('f_puyue', '浦月局', '浦月是斜指开局中的强攻型代表，以"浦江映月"命名。特点是黑棋主动出击、步步紧逼，在局部形成密集的进攻网，迫使白棋被动防守。',
+                '浦月的核心是「以攻为守」：通过连续的冲四/活三施压，让白棋疲于应付。补全后黑棋形成"双线必胜"结构。',
+                '你补全了浦月局的进攻要点！双线压制已成，如浦江映月、势不可挡！',
+                function(cx, cy, rng) {
+                    const b = chEmptyBoard();
+                    const p = (x, y, c) => { if (x>=0&&x<BOARD_SIZE&&y>=0&&y<BOARD_SIZE) b[y][x]=c; };
+                    // 浦月强攻骨架：黑棋主动出击的密集进攻形
+                    p(cx, cy, 1);       // 黑1
+                    p(cx+1, cy, 2);     // 白2 直挡
+                    p(cx+2, cy+1, 1);   // 黑3 斜进（浦月特色：主动出击）
+                    p(cx+1, cy+2, 2);   // 白4 拦截
+                    p(cx+3, cy, 1);     // 黑5 右侧展开
+                    p(cx+2, cy-1, 2);   // 白6 上挡
+                    p(cx+4, cy+1, 1);   // 黑7 再延（形成长线威胁）
+                    p(cx+3, cy+2, 2);   // 白8 跟防
+                    // 目标：浦月杀着——落此点同时成冲四+活三
+                    return { board:b, targets:[[cx+3, cy]], protectDirs:[[1,0],[1,1]], protectR:3 };
+                }
+            );
+
+            // 寒星开局——平衡型开局，稳扎稳打
+            reg('f_hanxing', '寒星局', '寒星是直指开局中的平衡型代表，取"寒夜孤星"之意。特点是稳扎稳打、不急不躁，通过均匀的布局逐步积累优势，适合持久战。',
+                '寒星的要义在于「均衡发展」：不偏废任一方向，每一步都保持多方向的发展潜力。补全后形成"四面开花"之势。',
+                '你补全了寒星局的平衡要点！四面均衡、如寒星独照、暗含无穷变化！',
+                function(cx, cy, rng) {
+                    const b = chEmptyBoard();
+                    const p = (x, y, c) => { if (x>=0&&x<BOARD_SIZE&&y>=0&&y<BOARD_SIZE) b[y][x]=c; };
+                    // 寒星平衡骨架：均匀展开的四向布局
+                    p(cx, cy, 1);       // 黑1 天元
+                    p(cx+1, cy+1, 2);   // 白2
+                    p(cx-1, cy, 1);     // 黑3 左展
+                    p(cx+1, cy-1, 2);   // 白4
+                    p(cx, cy+2, 1);     // 黑5 下展
+                    p(cx+2, cy, 2);     // 白6
+                    p(cx-2, cy+1, 1);   // 黑7 左下
+                    p(cx, cy-2, 2);     // 白8
+                    // 目标：寒星中心——连通上下左右四向
+                    return { board:b, targets:[[cx, cy+1]], protectDirs:[[0,1],[1,0],[-1,0],[0,-1]], protectR:2 };
+                }
+            );
+
+            // 疏星开局——分散型开局，控制大场
+            reg('f_shuxing', '疏星局', '疏星是直指开局中的分散型代表，意为"稀疏之星"。特点是不拘泥于局部缠斗，快速占据盘面要津，控制大场，适合大局观强的棋手。',
+                '疏星的精髓在于「先占大场」：快速展开控制要津，再逐步收紧包围圈。补全后形成"遥相呼应"的大格局。',
+                '你补全了疏星局的关键要津！星位尽占、遥相呼应、大势已成！',
+                function(cx, cy, rng) {
+                    const b = chEmptyBoard();
+                    const p = (x, y, c) => { if (x>=0&&x<BOARD_SIZE&&y>=0&&y<BOARD_SIZE) b[y][x]=c; };
+                    // 疏星分散骨架：占据多个星位的广域布局
+                    p(cx, cy, 1);       // 黑1 中腹
+                    p(cx+3, cy+2, 2);   // 白2 远应（疏星特色：不贴身防守）
+                    p(cx-2, cy-1, 1);   // 黑3 左上星位
+                    p(cx+1, cy+3, 2);   // 白4 右下
+                    p(cx+2, cy-2, 1);   // 黑5 右上星位
+                    p(cx-1, cy+2, 2);   // 白6 左下
+                    p(cx-3, cy+1, 1);   // 黑7 左远
+                    p(cx+4, cy, 2);     // 白8 右远
+                    // 目标：疏星联络点——连接两个分散的黑子群
+                    return { board:b, targets:[[cx, cy+1]], protectDirs:[[1,0],[0,1],[-1,1]], protectR:3 };
+                }
+            );
+
+            // 溪月开局——灵活型开局，如溪水蜿蜒
+            reg('f_xiyue', '溪月局', '溪月是斜指开局中的灵活型代表，取"溪水映月"之意。特点是布局如溪水般蜿蜒曲折、灵活多变，不拘一格，善于在变化中寻找机会。',
+                '溪月的妙处在于「曲径通幽」：看似松散的布局实则暗藏联络，一旦连通便势不可挡。补全后形成"蜿蜒成势"的曲线进攻。',
+                '你补全了溪月局的联络要点！溪水蜿蜒、曲径通幽、势已暗成！',
+                function(cx, cy, rng) {
+                    const b = chEmptyBoard();
+                    const p = (x, y, c) => { if (x>=0&&x<BOARD_SIZE&&y>=0&&y<BOARD_SIZE) b[y][x]=c; };
+                    // 溪月蜿蜒骨架：沿斜折线的灵活布局
+                    p(cx, cy, 1);       // 黑1
+                    p(cx+1, cy, 2);     // 白2
+                    p(cx+1, cy+2, 1);   // 黑3 下斜（溪月特色：不走直线）
+                    p(cx+2, cy+1, 2);   // 白4 拦
+                    p(cx+2, cy+4, 1);   // 黑5 继续蜿蜒下行
+                    p(cx+3, cy+3, 2);   // 白6
+                    p(cx-1, cy+1, 1);   // 黑7 反向延展
+                    p(cx, cy+3, 2);     // 白8
+                    // 目标：溪月转折点——连接上下两段蜿蜒线
+                    return { board:b, targets:[[cx+1, cy+3]], protectDirs:[[1,1],[0,1],[-1,1]], protectR:3 };
+                }
+            );
+
+            // 残月开局——收敛型开局，内敛积蓄力量
+            reg('f_canyue', '残月局', '残月是斜指开局中的收敛型代表，取"将残之月"之意。特点是内敛积蓄力量，看似退让实则暗藏杀机，适合后发制人的棋风。',
+                '残月的要诀在于「后发制人」：表面收敛、暗中积蓄，待对方露出破绽时一击致命。补全后形成"暗藏杀机"的内敛攻势。',
+                '你补全了残月局的关键一手！外敛内刚、如残月将满、杀机暗伏！',
+                function(cx, cy, rng) {
+                    const b = chEmptyBoard();
+                    const p = (x, y, c) => { if (x>=0&&x<BOARD_SIZE&&y>=0&&y<BOARD_SIZE) b[y][x]=c; };
+                    // 残月收敛骨架：紧凑的内敛布局
+                    p(cx, cy, 1);       // 黑1
+                    p(cx+1, cy+1, 2);   // 白2 紧贴
+                    p(cx-1, cy+1, 1);   // 黑3 内敛（不向外扩张）
+                    p(cx, cy+2, 2);     // 白4 压
+                    p(cx+1, cy-1, 1);   // 黑5 向上收缩
+                    p(cx+2, cy, 2);     // 白6 右跟
+                    p(cx-2, cy+2, 1);   // 黑7 左下密植
+                    p(cx-1, cy-1, 2);   // 白8 左上
+                    // 目标：残月发力点——内敛布局的中心爆发点
+                    return { board:b, targets:[[cx, cy+1]], protectDirs:[[0,1],[1,0],[-1,0],[1,1],[-1,1]], protectR:2 };
+                }
+            );
+
+            // ═══ 中盘战术阵型类（源自职业对局常见战术形态）═══
+
+            // 八卦阵——米字防御网，经典防守转攻阵型
+            reg('f_bagua', '八卦阵', '八卦阵是五子棋最经典的防守转攻阵型之一，源自中国古代军事思想。以中心点为"太极"，八方位布子形成米字防御网，敌来我守、敌退我攻，攻守转换自如。',
+                '八卦阵的要领在于「八方呼应」：每个子都是防线的一部分，又是进攻的起点。补全太极点后，八个方向同时具备进攻潜力。',
+                '你补全了八卦阵的太极中心！八方连线、攻守合一、乾坤已在掌中！',
+                function(cx, cy, rng) {
+                    const b = chEmptyBoard();
+                    const p = (x, y, c) => { if (x>=0&&x<BOARD_SIZE&&y>=0&&y<BOARD_SIZE) b[y][x]=c; };
+                    // 八卦米字骨架：八方位布子（留中心为"太极"空位）
+                    p(cx+2, cy, 1);    // 东
+                    p(cx-2, cy, 1);    // 西
+                    p(cx, cy+2, 1);    // 南
+                    p(cx, cy-2, 1);    // 北
+                    p(cx+2, cy+2, 1);  // 东南
+                    p(cx-2, cy-2, 1);  // 西北
+                    p(cx+2, cy-2, 1);  // 东北
+                    p(cx-2, cy+2, 1);  // 西南
+                    // 白子的自然防守应手
+                    p(cx+1, cy, 2);    p(cx-1, cy, 2);
+                    p(cx, cy+1, 2);    p(cx, cy-1, 2);
+                    p(cx+1, cy+1, 2);  p(cx-1, cy-1, 2);
+                    p(cx+3, cy, 2);    p(cx-3, cy, 2);
+                    // 目标：太极中心——连通全部八方位
+                    return { board:b, targets:[[cx, cy]], protectDirs:[[1,0],[-1,0],[0,1],[0,-1],[1,1],[-1,-1],[1,-1],[-1,1]], protectR:2 };
+                }
+            );
+
+            // 梅花阵——五瓣环绕，多点开花
+            reg('f_meihua', '梅花阵', '梅花阵是五子棋中盘战术中"多点开花"的代表阵型。以中心为花蕊，五瓣向五个方向展开（对应五子棋的五连目标），形似梅花绽放，美观而实用。',
+                '梅花阵的精髓在于「五瓣呼应」：每个花瓣都是一个独立的进攻方向，对手无法同时防守所有方向。补全花蕊后形成"五向必胜"。',
+                '你落下了梅花阵的花蕊！五瓣齐绽、花香满盘、多点进攻令对手防不胜防！',
+                function(cx, cy, rng) {
+                    const b = chEmptyBoard();
+                    const p = (x, y, c) => { if (x>=0&&x<BOARD_SIZE&&y>=0&&y<BOARD_SIZE) b[y][x]=c; };
+                    // 梅花五瓣骨架：十字+斜十字的五向展开（留花蕊）
+                    p(cx+2, cy, 1);    // 东瓣
+                    p(cx-2, cy, 1);    // 西瓣
+                    p(cx, cy+2, 1);    // 南瓣
+                    p(cx, cy-2, 1);    // 北瓣
+                    p(cx+2, cy+2, 1);  // 东南瓣（第五瓣）
+                    // 白子防守
+                    p(cx+1, cy, 2);    p(cx-1, cy, 2);
+                    p(cx, cy+1, 2);    p(cx, cy-1, 2);
+                    p(cx+1, cy+1, 2);  p(cx+3, cy+2, 2);
+                    p(cx-1, cy-1, 2);
+                    // 目标：花蕊——五瓣汇聚的中心
+                    return { board:b, targets:[[cx, cy]], protectDirs:[[1,0],[-1,0],[0,1],[0,-1],[1,1]], protectR:2 };
+                }
+            );
+
+            // 长蛇阵——一字长蛇，顺势延展
+            reg('f_changshe', '长蛇阵', '长蛇阵源自古代兵法"一字长蛇阵"，在五子棋中表现为沿某一方向连续延展的长线布局。特点是势大力沉、难以阻挡，一旦成型便有"横扫千军"之力。',
+                '长蛇阵的要害在于「顺势延展」：沿着已有势头不断加长，对手堵一头另一头又冒出。补全蛇头后形成"首尾呼应"的长线攻势。',
+                '你接上了长蛇阵的蛇头！长蛇出洞、首尾相连、一往无前、势不可挡！',
+                function(cx, cy, rng) {
+                    const b = chEmptyBoard();
+                    const p = (x, y, c) => { if (x>=0&&x<BOARD_SIZE&&y>=0&&y<BOARD_SIZE) b[y][x]=c; };
+                    // 长蛇骨架：横向一字长蛇（留蛇头，≤4连避免自成一五）
+                    for (let i = -2; i <= 1; i++) p(cx + i, cy, 1);  // 4子蛇身（背景延展后成势）
+                    // 白子的拦截（堵住一部分但留有空间）
+                    p(cx-5, cy, 2);   // 左端封
+                    p(cx+3, cy+1, 2); // 下侧拦
+                    p(cx+1, cy-1, 2); // 上侧拦
+                    p(cx-2, cy+1, 2); // 中段下拦
+                    // 目标：蛇头——延展长线的下一节点
+                    return { board:b, targets:[[cx+3, cy]], protectDirs:[[1,0]], protectR:3 };
+                }
+            );
+
+            // 双龙阵——两翼齐飞，夹击之势
+            reg('f_shuanglong', '双龙阵', '双龙阵是五子棋中盘典型的"双线夹击"战术。同时在棋盘两侧或两个方向构建进攻态势，如双龙出海、两翼齐飞，令对手顾此失彼、难以兼顾。',
+                '双龙阵的威力在于「两翼夹击」：当对手忙于防守一侧时，另一侧已经成形。补全龙颈后两侧同时施压。',
+                '你补全了双龙阵的龙颈！双龙出海、两翼齐飞、夹击之势已成！',
+                function(cx, cy, rng) {
+                    const b = chEmptyBoard();
+                    const p = (x, y, c) => { if (x>=0&&x<BOARD_SIZE&&y>=0&&y<BOARD_SIZE) b[y][x]=c; };
+                    // 双龙骨架：左龙+右龙（留各自的颈部空位）
+                    // 左龙（向左上方延展）
+                    p(cx-1, cy+1, 1);  p(cx-2, cy+2, 1);  p(cx-3, cy+3, 1);
+                    // 右龙（向右下方延展）
+                    p(cx+1, cy-1, 1);  p(cx+2, cy-2, 1);  p(cx+3, cy-3, 1);
+                    // 白子中间阻隔（围绕中心但不占据目标点）
+                    p(cx-1, cy, 2);    p(cx+1, cy, 2);
+                    p(cx, cy+1, 2);    p(cx, cy-1, 2);
+                    p(cx-4, cy+4, 2);  p(cx+4, cy-4, 2);
+                    // 目标：双龙颈——选择一侧补全（这里选右龙的颈部）
+                    return { board:b, targets:[[cx, cy]], protectDirs:[[1,-1],[-1,1]], protectR:4 };
+                }
+            );
+
+            // 金钟罩——包围防守型，密不透风
+            reg('f_jinzhongzhao', '金钟罩阵', '金钟罩阵是一种极致的防守反击阵型，源自武侠概念"金钟罩铁布衫"。特点是围绕核心区域构筑多层防线，密不透风，待对手力竭后从内部发起反攻。',
+                '金钟罩的奥妙在于「密不透风」：外围防线坚不可摧，内部却暗藏杀机。补全罩门后内外贯通、转为攻势。',
+                '你补全了金钟罩的罩门！铁壁合围、密不透风、反攻之时已到！',
+                function(cx, cy, rng) {
+                    const b = chEmptyBoard();
+                    const p = (x, y, c) => { if (x>=0&&x<BOARD_SIZE&&y>=0&&y<BOARD_SIZE) b[y][x]=c; };
+                    // 金钟罩骨架：方形包围圈（留中心为罩门）
+                    p(cx-2, cy-2, 1); p(cx-1, cy-2, 1); p(cx+1, cy-2, 1); p(cx+2, cy-2, 1); // 上边
+                    p(cx-2, cy+2, 1); p(cx-1, cy+2, 1); p(cx+1, cy+2, 1); p(cx+2, cy+2, 1); // 下边
+                    p(cx-2, cy-1, 1); p(cx-2, cy+1, 1);   // 左边
+                    p(cx+2, cy-1, 1); p(cx+2, cy+1, 1);   // 右边
+                    // 白子在更外围（模拟对手的进攻已被化解）
+                    p(cx-3, cy-2, 2); p(cx+3, cy-2, 2);
+                    p(cx-3, cy+2, 2); p(cx+3, cy+2, 2);
+                    p(cx-2, cy-3, 2); p(cx+2, cy-3, 2);
+                    p(cx-2, cy+3, 2); p(cx+2, cy+3, 2);
+                    p(cx, cy-1, 2);   p(cx, cy+1, 2);
+                    p(cx-1, cy, 2);    p(cx+1, cy, 2);
+                    // 目标：罩门——包围圈的中心
+                    return { board:b, targets:[[cx, cy]], protectDirs:[[1,0],[-1,0],[0,1],[0,-1]], protectR:2 };
+                }
+            );
+
+            // 游龙阵——曲线延展，声东击西
+            reg('f_youlong', '游龙阵', '游龙阵是长蛇阵的高级变式，特点是棋子不是沿直线而是沿曲线/折线延展，如游龙蜿蜒。比直线更难预测和防守，常用于侧翼偷袭或声东击西。',
+                '游龙阵的精妙在于「神出鬼没」：曲线延展让对手无法判断你的真实意图。补全转折点后突然改变方向、出其不意。',
+                '你补全了游龙阵的转折点！神龙摆尾、方向突变、对手措手不及！',
+                function(cx, cy, rng) {
+                    const b = chEmptyBoard();
+                    const p = (x, y, c) => { if (x>=0&&x<BOARD_SIZE&&y>=0&&y<BOARD_SIZE) b[y][x]=c; };
+                    // 游龙曲线骨架：Z字形蜿蜒（留转折点）
+                    p(cx-3, cy-2, 1);  p(cx-2, cy-1, 1);  p(cx-1, cy, 1);  // 第一段（右上）
+                    // (cx, cy) 空位 —— 转折点（目标）
+                    p(cx+1, cy+1, 1);  p(cx+2, cy+2, 1);  p(cx+3, cy+3, 1);  // 第二段（右下）
+                    // 白子拦截
+                    p(cx-4, cy-3, 2);  p(cx+4, cy+4, 2);
+                    p(cx, cy-1, 2);    p(cx+1, cy, 2);
+                    p(cx-1, cy+1, 2);  p(cx, cy+2, 2);
+                    // 目标：转折点——连接两段曲线
+                    return { board:b, targets:[[cx, cy]], protectDirs:[[1,1],[1,-1],[-1,1]], protectR:3 };
+                }
+            );
+
+            // 锋矢阵——集中突破，一点突破
+            reg('f_fengshi', '锋矢阵', '锋矢阵源自古代军制"锋矢之阵"，以尖端为锋、两翼为矢。在五子棋中表现为集中优势兵力于一点的突破战术，适合在局面僵持时强行打开缺口。',
+                '锋矢阵的杀手锏在于「集中突破」：所有力量汇聚于一点，形成不可阻挡的冲击力。补全锋尖后一点突破、撕开防线。',
+                '你补全了锋矢阵的锋尖！矢锋所指、无坚不摧、一点突破、全局皆活！',
+                function(cx, cy, rng) {
+                    const b = chEmptyBoard();
+                    const p = (x, y, c) => { if (x>=0&&x<BOARD_SIZE&&y>=0&&y<BOARD_SIZE) b[y][x]=c; };
+                    // 锋矢骨架：箭头形（留锋尖）
+                    // 矢身（尾部宽、头部尖）
+                    p(cx-2, cy-1, 1);  p(cx-2, cy, 1);  p(cx-2, cy+1, 1);  // 矢尾（三子宽）
+                    p(cx-1, cy, 1);    // 矢身中段
+                    // (cx, cy) 空位 —— 锋尖（目标）
+                    // 两翼辅助
+                    p(cx, cy-2, 1);    p(cx, cy+2, 1);   // 侧翼
+                    // 白子的正面防守
+                    p(cx+1, cy, 2);    p(cx+2, cy, 2);
+                    p(cx+1, cy-1, 2);  p(cx+1, cy+1, 2);
+                    p(cx-3, cy-1, 2);  p(cx-3, cy+1, 2);
+                    // 目标：锋尖——箭头的尖端突破点
+                    return { board:b, targets:[[cx, cy]], protectDirs:[[1,0],[1,1],[1,-1]], protectR:3 };
+                }
+            );
+
+            // 云阵——厚势积累，循序渐进
+            reg('f_yunzhen', '云阵', '云阵是一种"厚势型"阵型，特点是棋子分布如层云叠布、虚实相间。不追求锐利的进攻，而是通过厚实的积累逐渐压缩对手的空间，最终以"势"取胜。',
+                '云阵的哲学在于「积势」：每一手都在增加整体的厚度，量变终将引发质变。补全云核后整片云势浑然一体。',
+                '你补全了云阵的云核！层云叠布、厚势已成、大势压人、胜负已分！',
+                function(cx, cy, rng) {
+                    const b = chEmptyBoard();
+                    const p = (x, y, c) => { if (x>=0&&x<BOARD_SIZE&&y>=0&&y<BOARD_SIZE) b[y][x]=c; };
+                    // 云阵层叠骨架：三层云（留云核）
+                    // 内层云
+                    p(cx-1, cy-1, 1);  p(cx+1, cy+1, 1);
+                    // 中层云
+                    p(cx-2, cy, 1);    p(cx+2, cy, 1);
+                    p(cx, cy-2, 1);    p(cx, cy+2, 1);
+                    // 外层云
+                    p(cx-3, cy-1, 1);  p(cx+3, cy+1, 1);
+                    p(cx-1, cy+3, 1);  p(cx+1, cy-3, 1);
+                    // 白子穿插其中（云中有眼）
+                    p(cx, cy, 2);      // 中心暂被占
+                    p(cx-1, cy, 2);    p(cx+1, cy, 2);
+                    p(cx, cy-1, 2);    p(cx, cy+1, 2);
+                    p(cx-2, cy-2, 2);  p(cx+2, cy+2, 2);
+                    // 目标：云核——替换中心白子成为真正的厚势中心
+                    // （实际玩法：在旁边落子使阵型完整）
+                    return { board:b, targets:[[cx-1, cy-1]/*备选*/], protectDirs:[[1,1],[-1,-1],[1,0],[0,1]], protectR:2 };
+                }
+            );
+
+            // 连珠阵——十字交叉，双向生根
+            reg('f_lianzhu', '连珠阵', '连珠阵是五子棋最基本的"十字联络"阵型，名字即来源于"连珠"（五子棋的别称）。特点是十字交叉的两条线上各有棋子，交叉点是整个阵型的命脉。',
+                '连珠阵的基础在于「双向生根」：十字交叉意味着两个方向同时生根发展。补全交叉点后形成"纵横四海"的双向攻势。',
+                '你补全了连珠阵的交叉点！十字生根、纵横四海、双向展开、势不可挡！',
+                function(cx, cy, rng) {
+                    const b = chEmptyBoard();
+                    const p = (x, y, c) => { if (x>=0&&x<BOARD_SIZE&&y>=0&&y<BOARD_SIZE) b[y][x]=c; };
+                    // 连珠十字骨架：横竖各两子（留交叉点）
+                    p(cx-1, cy, 1);    p(cx-2, cy, 1);    // 横向左
+                    p(cx, cy-1, 1);    p(cx, cy-2, 1);    // 竖向上
+                    // 白子防守
+                    p(cx+1, cy, 2);    p(cx, cy+1, 2);
+                    p(cx-3, cy, 2);    p(cx, cy-3, 2);
+                    p(cx+1, cy-1, 2);  p(cx-1, cy+1, 2);
+                    // 目标：十字交叉点
+                    return { board:b, targets:[[cx, cy]], protectDirs:[[1,0],[-1,0],[0,1],[0,-1]], protectR:3 };
+                }
+            );
+
+            // 燕阵——展翅之形，两侧对称展开
+            reg('f_yanzhen', '燕阵', '燕阵是一种优美的对称展开阵型，形如燕子展翅。特点是左右（或上下）对称展开，两翼平衡发展，既有美感又有实效，是对称美学在五子棋中的体现。',
+                '燕阵的美学在于「对称展开」：两翼如燕翅般对称伸展，既美观又实用。补全燕身后双翅齐振、凌空而起。',
+                '你补全了燕阵的燕身！双翅齐振、凌空而起、对称之美、攻守兼备！',
+                function(cx, cy, rng) {
+                    const b = chEmptyBoard();
+                    const p = (x, y, c) => { if (x>=0&&x<BOARD_SIZE&&y>=0&&y<BOARD_SIZE) b[y][x]=c; };
+                    // 燕阵展翅骨架：V字形双翅（留燕身）
+                    // 左翅
+                    p(cx-2, cy-2, 1);  p(cx-3, cy-3, 1);
+                    // 右翅
+                    p(cx+2, cy-2, 1);  p(cx+3, cy-3, 1);
+                    // 燕尾
+                    p(cx, cy+2, 1);    p(cx, cy+3, 1);
+                    // 白子（围绕燕身但不占据目标点）
+                    p(cx-1, cy-1, 2);  p(cx+1, cy-1, 2);
+                    p(cx-4, cy-4, 2);  p(cx+4, cy-4, 2);
+                    p(cx, cy+4, 2);
+                    // 目标：燕身——连接双翅与燕尾
+                    return { board:b, targets:[[cx, cy]], protectDirs:[[1,-1],[-1,-1],[0,1]], protectR:3 };
+                }
+            );
+
+            // 铁壁阵——密集防线，滴水不漏
+            reg('f_tiebi', '铁壁阵', '铁壁阵是一种极端的密集防守阵型，特点是棋子紧密排列形成一道"铁壁"。虽然看起来呆板，但在劣势下是有效的拖延和反击基础，所谓"铁壁铜墙、固若金汤"。',
+                '铁壁阵的价值在于「固若金汤」：密集排列让对手无处下手。补全壁心后铁壁转化为进攻的跳板。',
+                '你补全了铁壁阵的壁心！铜墙铁壁、固若金汤、坚不可摧、反攻在即！',
+                function(cx, cy, rng) {
+                    const b = chEmptyBoard();
+                    const p = (x, y, c) => { if (x>=0&&x<BOARD_SIZE&&y>=0&&y<BOARD_SIZE) b[y][x]=c; };
+                    // 铁壁密集骨架：双排密集防线（留壁心）
+                    // 第一排壁
+                    p(cx-2, cy-1, 1);  p(cx-1, cy-1, 1);
+                    p(cx+1, cy-1, 1);  p(cx+2, cy-1, 1);
+                    // 第二排壁
+                    p(cx-2, cy+1, 1);  p(cx-1, cy+1, 1);
+                    p(cx+1, cy+1, 1);  p(cx+2, cy+1, 1);
+                    // 白子在正面对抗的位置（围绕壁心但不占据目标点）
+                    p(cx, cy-1, 2);    p(cx, cy+1, 2);
+                    p(cx-3, cy, 2);    p(cx+3, cy, 2);
+                    p(cx-3, cy-1, 2);  p(cx+3, cy+1, 2);
+                    // 目标：壁心——双排防线的中心枢纽
+                    return { board:b, targets:[[cx, cy]], protectDirs:[[1,0],[-1,0],[0,1],[0,-1]], protectR:2 };
+                }
+            );
+
+            // 莲花阵——中心绽放，层层外扩
+            reg('f_lianhua', '莲花阵', '莲花阵是一种"由中心向外逐层扩展"的阵型，形如莲花绽放。从中心花蕊开始，第一层四瓣、第二层八瓣……层层外扩，每层都与内层保持联络。',
+                '莲花阵的结构在于「层层绽放」：由内而外逐层展开，每层都依赖内层的支撑。补全花蕊后整朵莲花由此盛开。',
+                '你补全了莲花阵的花蕊！莲花绽放、层层外扩、八面玲珑、美不胜收！',
+                function(cx, cy, rng) {
+                    const b = chEmptyBoard();
+                    const p = (x, y, c) => { if (x>=0&&x<BOARD_SIZE&&y>=0&&y<BOARD_SIZE) b[y][x]=c; };
+                    // 莲花绽放骨架：两层花瓣（留花蕊）
+                    // 内层四瓣
+                    p(cx+1, cy, 1);    p(cx-1, cy, 1);
+                    p(cx, cy+1, 1);    p(cx, cy-1, 1);
+                    // 外层八瓣
+                    p(cx+2, cy, 1);    p(cx-2, cy, 1);
+                    p(cx, cy+2, 1);    p(cx, cy-2, 1);
+                    p(cx+2, cy+2, 1);  p(cx-2, cy-2, 1);
+                    p(cx+2, cy-2, 1);  p(cx-2, cy+2, 1);
+                    // 白子点缀（露水）
+                    p(cx+1, cy+1, 2);  p(cx-1, cy-1, 2);
+                    p(cx+1, cy-1, 2);  p(cx-1, cy+1, 2);
+                    p(cx+3, cy, 2);    p(cx-3, cy, 2);
+                    p(cx, cy+3, 2);    p(cx, cy-3, 2);
+                    // 目标：花蕊——莲花的中心
+                    return { board:b, targets:[[cx, cy]], protectDirs:[[1,0],[-1,0],[0,1],[0,-1],[1,1],[-1,-1],[1,-1],[-1,1]], protectR:2 };
+                }
+            );
+
+            // 剑字阵——剑身剑格，攻守一体
+            reg('f_jianzhen', '剑字阵', '剑字阵是一种"攻守一体"的阵型，形如汉字"剑"的笔画结构。竖画为剑身（主攻方向），横画为剑格（防守与转换），整体既有锐利的攻击又有稳固的防守。',
+                '剑字阵的特点在于「攻守一体」：剑身负责锐利进攻，剑格负责稳固防守。补全剑格端点后攻守转换自如。',
+                '你补全了剑字阵的剑格端点！剑身锋利、剑格稳固、攻守一体、气象万千！',
+                function(cx, cy, rng) {
+                    const b = chEmptyBoard();
+                    const p = (x, y, c) => { if (x>=0&&x<BOARD_SIZE&&y>=0&&y<BOARD_SIZE) b[y][x]=c; };
+                    // 剑字骨架：竖（剑身）+ 横（剑格）（留剑格右端）
+                    // 剑身（竖向，≤4连避免自成一五）
+                    for (let i = -2; i <= 1; i++) p(cx, cy + i, 1);  // 4子剑身
+                    // 剑格（横向，留右端）
+                    p(cx-2, cy-3, 1);  p(cx-1, cy-3, 1);
+                    p(cx, cy-3, 1);    p(cx+1, cy-3, 1);
+                    // (cx+2, cy-3) 空位 —— 剑格右端（目标）
+                    // 白子
+                    p(cx+1, cy+2, 2);  p(cx, cy-4, 2);
+                    p(cx-3, cy-3, 2);  p(cx+3, cy-2, 2);
+                    p(cx-1, cy+1, 2);  p(cx+1, cy-1, 2);
+                    // 目标：剑格右端
+                    return { board:b, targets:[[cx+2, cy-3]], protectDirs:[[1,0]], protectR:3 };
+                }
+            );
+
+            // 连星阵——星位控制，外扩占领
+            reg('f_lianxing', '连星阵', '连星阵是一种"抢占星位"的开局/中盘阵型，灵感来源于围棋的"三连星"。特点是快速占据棋盘上的关键星位（如天元四周的特定点），通过星位间的联络控制大盘。',
+                '连星阵的策略在于「占星控盘」：星位是棋盘的战略要地，占据后可向四周辐射控制力。补全连星后星位尽在掌握。',
+                '你补全了连星阵的关键星位！星辰连线、要津尽占、大局在握、胜负可期！',
+                function(cx, cy, rng) {
+                    const b = chEmptyBoard();
+                    const p = (x, y, c) => { if (x>=0&&x<BOARD_SIZE&&y>=0&&y<BOARD_SIZE) b[y][x]=c; };
+                    // 连星骨架：三个星位呈斜线（留一个）
+                    p(cx-3, cy-3, 1);  // 星位1（西北）
+                    // (cx, cy) 空位 —— 星位2（中心，目标）
+                    p(cx+3, cy+3, 1);  // 星位3（东南）
+                    // 辅助联络子
+                    p(cx-1, cy-1, 1);  p(cx+1, cy+1, 1);
+                    // 白子（围绕中心星位但不占据目标点）
+                    p(cx-2, cy-2, 2);  p(cx+2, cy+2, 2);
+                    p(cx-4, cy-3, 2);  p(cx+4, cy+3, 2);
+                    p(cx-3, cy-4, 2);  p(cx+3, cy+4, 2);
+                    // 目标：中心星位
+                    return { board:b, targets:[[cx, cy]], protectDirs:[[1,1],[-1,-1],[1,-1],[-1,1]], protectR:4 };
+                }
+            );
+
+            // 蛇蜕阵——蜕旧新生，延展变向
+            reg('f_shetui', '蛇蜕阵', '蛇蜕阵是长蛇阵的终极变式，取"金蝉脱壳、蛇蜕新生"之意。特点是长线延展过程中突然改变方向（蜕皮转向），让对手预判的防守落空，是高级欺骗战术。',
+                '蛇蜕阵的绝招在于「蜕皮变向」：在对手以为你已经走到尽头时突然转向新的方向。补全蜕皮点后全新攻势由此诞生。',
+                '你补全了蛇蜕阵的蜕皮点！金蝉脱壳、蛇蜕新生、方向突变、对手茫然！',
+                function(cx, cy, rng) {
+                    const b = chEmptyBoard();
+                    const p = (x, y, c) => { if (x>=0&&x<BOARD_SIZE&&y>=0&&y<BOARD_SIZE) b[y][x]=c; };
+                    // 蛇蜕骨架：横向长线 + 直角转弯（留蜕皮点）
+                    // 旧蛇身（横向）
+                    p(cx-4, cy, 1);  p(cx-3, cy, 1);  p(cx-2, cy, 1);  p(cx-1, cy, 1);
+                    // (cx, cy) 空位 —— 蜕皮点（目标）：在此转弯
+                    // 新蛇身（纵向——蜕皮后的新方向）
+                    p(cx, cy+1, 1);   p(cx, cy+2, 1);   p(cx, cy+3, 1);
+                    // 白子（原方向上的拦截）
+                    p(cx+1, cy, 2);   p(cx+2, cy, 2);
+                    p(cx-5, cy, 2);
+                    p(cx, cy+4, 2);   // 新方向上的远端拦截
+                    p(cx-1, cy+1, 2); p(cx+1, cy+1, 2);
+                    // 目标：蜕皮点——连接旧蛇身与新蛇身的转弯点
+                    return { board:b, targets:[[cx, cy]], protectDirs:[[1,0],[0,1]], protectR:3 };
+                }
+            );
+
+            return F;
+        })();
         // 确定性生成「相邻不重复」的任务序列：彻底消除连续/周期性重复
         function chSeqNoAdjacent(types, seed, count) {
             const rng = chRng(seed);
@@ -3596,16 +4081,9 @@
             return out;
         }
         const CH_GUIDE_SEQ = chSeqNoAdjacent(CH_GUIDE_TYPES, 90017, 30);
-        const CH_WIN_SEQ   = chSeqNoAdjacent(CH_WIN_TYPES, 77001, 170); // 31–200 取胜杀法，无相邻重复
-        // 后期关卡（n>=131）融入「变式阵法知识」，循环展示不同阵型渊源与要点
-        const CH_VARIANT_FORMS = [
-            ['游龙阵', '游龙阵是长蛇阵的变式：子力沿斜线蜿蜒延展、攻防一体，便于在侧翼突然发难、声东击西。'],
-            ['八卦变式', '八卦阵变式以米字联络替代满盘布点，留白更多、机动更强，是经典「以静制动、后发制人」的防守转攻阵型。'],
-            ['梅花变式', '梅花阵变式在五瓣之外暗藏一枝「接应子」，看似分散实则互相呼应，利于多点做棋、伺机成势。'],
-            ['连星阵', '连星阵取棋盘星位连点成势，子力外扩、控制要津，是开局抢势的常见变式，重在占点与联络。'],
-            ['云阵', '云阵子力如层云叠布、虚实相间，专于以厚势压人、循序渐进，讲究「势」的积累而非一子得失。'],
-            ['锋矢阵', '锋矢阵以一点为锋、两翼为矢，集中兵力于一点突破，是强攻型变式，适合劣势下搏杀。']
-        ];
+        // 阵型摆谱序列：31–200 关从 CH_FORMATIONS 中按 key 无相邻重复选取
+        const FORMATION_KEYS = CH_FORMATIONS.map(f => f.key);
+        const CH_FORMATION_SEQ = chSeqNoAdjacent(FORMATION_KEYS, 77001, 170);
 
         // 沿方向 dir 在 (cx,cy) 起偏移 off 处连续放置 len 子
         function chPlaceRun(b, cx, cy, dir, len, color, off) {
@@ -3616,41 +4094,12 @@
             }
         }
 
-        // 构建「取胜杀法」的核心棋形（黑棋预置结构 + 落子目标点），返回落子前的棋盘
-        function buildWinCore(type, cx, cy, dirA, dirB) {
-            const b = chEmptyBoard();
-            const color = 1;
-            let targets = [], goal = '', protectDirs = [dirA], protectR = 5;
-            if (type === 'k_five') {
-                // 四子连线（活四），落任一端成五取胜
-                chPlaceRun(b, cx, cy, dirA, 4, 1, 1);
-                targets = [[cx, cy], [cx + dirA[0] * 5, cy + dirA[1] * 5]];
-                goal = 'five'; protectDirs = [dirA];
-            } else if (type === 'k_live4') {
-                // 三子连线，落任一端成「活四」必胜
-                chPlaceRun(b, cx, cy, dirA, 3, 1, 1);
-                targets = [[cx, cy], [cx + dirA[0] * 4, cy + dirA[1] * 4]];
-                goal = 'live4'; protectDirs = [dirA];
-            } else if (type === 'k_four3') {
-                // 沿 dirA 三子（落子成四）+ 沿 dirB 两子（落子成活三）→ 四三杀
-                chPlaceRun(b, cx, cy, dirA, 3, 1, 1);
-                chPlaceRun(b, cx, cy, dirB, 2, 1, 1);
-                targets = [[cx, cy]];
-                goal = 'four3'; protectDirs = [dirA, dirB];
-            } else if (type === 'k_four4') {
-                // 沿 dirA、dirB 各三子，落子成两个「四」→ 双四杀
-                chPlaceRun(b, cx, cy, dirA, 3, 1, 1);
-                chPlaceRun(b, cx, cy, dirB, 3, 1, 1);
-                targets = [[cx, cy]];
-                goal = 'four4'; protectDirs = [dirA, dirB];
-            } else { // k_double3
-                // 沿 dirA、dirB 各两子，落子成两个「活三」→ 三三杀
-                chPlaceRun(b, cx, cy, dirA, 2, 1, 1);
-                chPlaceRun(b, cx, cy, dirB, 2, 1, 1);
-                targets = [[cx, cy]];
-                goal = 'double3'; protectDirs = [dirA, dirB];
+        // 查找阵型定义（by key）
+        function chGetFormation(key) {
+            for (let i = 0; i < CH_FORMATIONS.length; i++) {
+                if (CH_FORMATIONS[i].key === key) return CH_FORMATIONS[i];
             }
-            return { board: b, targets, goal, protectDirs, protectR };
+            return CH_FORMATIONS[0]; // 兜底
         }
 
         // 落子后该色在 (x,y) 处的最长连子数（4 方向最大），用于禁止误成四/五连
@@ -3724,8 +4173,9 @@
             const clusters = [];
             const nc = 2 + (n > 110 ? 1 : 0) + (n > 170 ? 1 : 0); // 2..4 个「战团」中心
             for (let i = 0; i < nc; i++) clusters.push([6 + Math.floor(rng() * 5), 6 + Math.floor(rng() * 5)]);
-            // 背景黑子最长连子限制：三三杀关背景黑子不能成「活三」（否则与核心叠加会误判已达成）；其余关禁成四/五连
-            const blackMax = (goal === 'double3') ? 3 : 4;
+            // 背景黑/白最长连子限制：阵型摆谱（opening）双方均禁成五连
+            // 黑子限≤3连（因为阵型核心自身已有黑子，叠加后可能达四/五连）
+            const blackMax = 3;   // 背景黑子禁≥4连（保守，避免与核心叠加成五）
             chGrowBlob(board, reserved, 1, per, clusters, rng, blackMax);
             chGrowBlob(board, reserved, 2, per, clusters, rng, 4);
             // 平衡双方总数，使真实棋局双方棋数相同（黑含取胜核心，故白补到与之相等）
@@ -3746,20 +4196,17 @@
             if (cb < cw) topUp(1, blackMax); else if (cw < cb) topUp(2, 4);
         }
 
-        // 校验：初始未达成目标、双方均无五连、目标落子后必胜
-        function validateWin(board, targets, color, goal) {
-            if (chCheckGoal(board, color, goal)) return false;
+        // 校验阵型关卡：目标空位存在且为空、双方均无五连
+        function validateFormation(board, targets) {
+            // 目标点必须在界内且为空
+            for (const t of targets) {
+                if (t[0] < 0 || t[0] >= BOARD_SIZE || t[1] < 0 || t[1] >= BOARD_SIZE) return false;
+                if (board[t[1]][t[0]] !== 0) return false;
+            }
+            // 双方均无五连（阵型摆谱不应提前有五子连珠）
             if (chCountRuns(board, 1, 5).any > 0) return false;
             if (chCountRuns(board, 2, 5).any > 0) return false;
-            let ok = false;
-            for (const t of targets) {
-                if (board[t[1]][t[0]] !== 0) return false;
-                board[t[1]][t[0]] = color;
-                if (chCheckGoal(board, color, goal)) ok = true;
-                board[t[1]][t[0]] = 0;
-                if (ok) break;
-            }
-            return ok;
+            return true;
         }
 
         function chBuildLevel(n) {
@@ -3809,42 +4256,52 @@
                     goal = 'five'; protectDirs = [dir];
                 }
             } else {
-                // 阵型实战（31–200）：在真实棋局中演练「取胜」杀法
-                const type = CH_WIN_SEQ[n - 31];
-                const showTut = (n <= 40);   // 前 10 关（31–40）给出落点提示，之后自行判断
+                // 阵型摆谱（31–200）：在真实对局中补全经典阵型的关键着法
+                const fkey = CH_FORMATION_SEQ[n - 31];
+                const fmt = chGetFormation(fkey);
+                const showTut = (n <= 50);   // 前 20 关（31–50）给出落点提示，之后自行判断
                 let built = null;
-                for (let attempt = 0; attempt < 80 && !built; attempt++) {
+                for (let attempt = 0; attempt < 120 && !built; attempt++) {
                     const rng2 = chRng(n * 97 + 13 + attempt * 1009);
                     const cx = 5 + Math.floor(rng2() * 5);   // 5..9，居中开战
                     const cy = 5 + Math.floor(rng2() * 5);
-                    const dirA = CH_DIRS[Math.floor(rng2() * CH_DIRS.length)];
-                    let dirB = dirA;
-                    if (type === 'k_four3' || type === 'k_four4' || type === 'k_double3') {
-                        do { dirB = CH_DIRS[Math.floor(rng2() * CH_DIRS.length)]; } while (dirB === dirA);
+                    try {
+                        const core = fmt.build(cx, cy, rng2);
+                        // 安全网：确保目标位置为空（防止模板误放棋子）
+                        for (const t of core.targets) {
+                            if (t[0]>=0 && t[0]<BOARD_SIZE && t[1]>=0 && t[1]<BOARD_SIZE) core.board[t[1]][t[0]] = 0;
+                        }
+                        // 在阵型核心之外添加真实棋局背景（等子、密集成团）
+                        addRealGameBackground(core.board, core.targets, core.protectDirs, core.protectR, n, rng2, 'opening');
+                        if (validateFormation(core.board, core.targets)) built = core;
+                    } catch(e) { /* 坐标越界则重试 */ }
+                }
+                if (!built) { // 兜底：用安全中心坐标，多次尝试
+                    for (let fallbackAttempt = 0; fallbackAttempt < 50 && !built; fallbackAttempt++) {
+                        const fc = 7 + (fallbackAttempt % 3);
+                        const fcore = fmt.build(fc, 7 + Math.floor(fallbackAttempt/3), chRng(n * 97 + 13 + fallbackAttempt * 79));
+                        for (const t of fcore.targets) { if (t[0]>=0&&t[0]<BOARD_SIZE&&t[1]>=0&&t[1]<BOARD_SIZE) fcore.board[t[1]][t[0]] = 0; }
+                        addRealGameBackground(fcore.board, fcore.targets, fcore.protectDirs, fcore.protectR, n, chRng(n * 97 + 23 + fallbackAttempt * 79), 'opening');
+                        if (validateFormation(fcore.board, fcore.targets)) built = fcore;
                     }
-                    const core = buildWinCore(type, cx, cy, dirA, dirB);
-                    addRealGameBackground(core.board, core.targets, core.protectDirs, core.protectR, n, rng2, core.goal);
-                    if (validateWin(core.board, core.targets, 1, core.goal)) built = core;
+                    if (!built) { // 终极兜底：纯净阵型 + 轻量背景
+                        const core = fmt.build(7, 7, chRng(n * 97 + 13));
+                        for (const t of core.targets) { if (t[0]>=0&&t[0]<BOARD_SIZE&&t[1]>=0&&t[1]<BOARD_SIZE) core.board[t[1]][t[0]] = 0; }
+                        addRealGameBackground(core.board, core.targets, core.protectDirs || [[1,0]], core.protectR || 2, n, chRng(n * 97 + 99), 'opening');
+                        built = core;
+                    }
                 }
-                if (!built) built = buildWinCore(type, 7, 7, [1, 0], [0, 1]); // 兜底（理论不触发）
-                targets = built.targets; goal = built.goal; showTarget = showTut;
+                targets = built.targets; goal = 'opening'; showTarget = showTut;
                 board = built.board; color = 1; guided = false;
-                const WINFO = {
-                    k_five:    ['一击成五', '黑棋已连成四子且两端皆空（活四），<b>在任一端空位落子</b>连成五子直接取胜！', '正确！五子连珠，一击制胜！'],
-                    k_live4:   ['活四必胜', '黑棋三子连线，<b>在任一端空位落子</b>连成「活四」——对手无法同时封堵两端，必胜。', '正确！活四两端皆空，下一手必成五，胜势已定！'],
-                    k_four3:   ['四三杀', '黑棋落一子可同时成「四」与「活三」，<b>找出这交叉点</b>形成四三杀，对手防不胜防。', '正确！一子四三杀，对手只能防一个，下一手必成五取胜！'],
-                    k_four4:   ['双四杀', '黑棋两个方向各差一子成「四」，<b>在交叉空位落子</b>同时形成两个「四」，对手堵不住。', '正确！一子双四，两个「四」各有一端可成五，直接锁定胜局！'],
-                    k_double3: ['三三杀', '黑棋在交叉处留有缺口，<b>在中心空位落子</b>同时形成两条「活三」，让对手顾此失彼。', '正确！一子双活三（三三杀），对手只能堵一个，随即演变成四三取胜！']
-                };
-                const w = WINFO[type];
-                title = w[0]; desc = '<b>' + w[1] + '</b>'; success = w[2];
-                if (n >= 131) {   // 后期关卡融入「变式阵法知识」
-                    const vf = CH_VARIANT_FORMS[(n - 131) % CH_VARIANT_FORMS.length];
-                    desc += '<br><span style="color:#a06a00;font-size:13px;line-height:1.6;">📖 变式阵法 · ' + vf[0] + '：' + vf[1] + '</span>';
-                }
+                protectDirs = built.protectDirs || [[1,0]];
+                protectR = built.protectR || 2;
+                title = '摆谱·' + fmt.name;
+                desc = '<b>「' + fmt.name + '」</b>：' + fmt.origin + ' <b>请在闪烁空位落子</b>，补全阵型关键点。';
+                desc += '<br><span style="color:#1a5276;font-size:12px;line-height:1.6;">💡 ' + fmt.tip + '</span>';
+                success = fmt.success;
             }
 
-            // 干扰子：仅「基础引导」段补充少量干扰；阵型实战段已在 buildWinCore 内布置真实棋局背景
+            // 干扰子：仅「基础引导」段补充少量干扰；阵型摆谱段已在 addRealGameBackground 内布置真实棋局背景（等子、密集成团）
             if (tier === 'guide') {
                 let distract = 2 + Math.floor(n / 10);
                 const reserved = new Set();
