@@ -167,10 +167,21 @@
         .ch-arrow { color: #a67c52; font-size: 14px; transition: transform .25s ease; }
         .challenge-card.open .ch-arrow { transform: rotate(90deg); }
         .ch-card-body { max-height: 0; overflow: hidden; transition: max-height .3s ease, padding .3s ease; padding: 0 16px; color: #4a3a26; line-height: 1.75; font-size: 15px; }
-        .challenge-card.open .ch-card-body { max-height: 700px; padding: 0 16px 16px; }
+        .challenge-card.open .ch-card-body { max-height: 1100px; padding: 0 16px 16px; }
         .ch-card-body b { color: #a8431f; }
         .shape-line { display: flex; align-items: center; gap: 8px; margin: 6px 0; }
         .shape-ico { font-size: 19px; letter-spacing: 2px; background: #f3e3cc; border-radius: 6px; padding: 2px 8px; color: #5a3a1a; }
+        /* —— 棋盘引导练习 —— */
+        .ch-desc { color: #4a3a26; line-height: 1.7; font-size: 15px; }
+        .ch-desc b { color: #a8431f; }
+        .ch-board { display: block; margin: 12px auto 6px; width: min(380px, 92%); height: auto; background: #f0d9b5; border-radius: 8px; box-shadow: 0 2px 10px rgba(139, 69, 19, .22); cursor: pointer; touch-action: manipulation; }
+        .ch-guide { margin-top: 4px; font-size: 14px; color: #2e7d32; font-weight: 700; text-align: center; }
+        .ch-feedback { margin-top: 6px; min-height: 22px; font-size: 14px; text-align: center; line-height: 1.5; }
+        .ch-feedback.ok { color: #1f9d3b; font-weight: 600; }
+        .ch-feedback.warn { color: #c0761a; }
+        .ch-actions { text-align: center; margin-top: 8px; }
+        .ch-btn { background: #c9a66b; color: #fff; border: none; border-radius: 8px; padding: 6px 18px; font-size: 14px; cursor: pointer; transition: background .2s; }
+        .ch-btn:hover { background: #b8915a; }
         .challenge-cta { width: min(660px, 92vw); margin: 22px auto 30px; text-align: center; }
         .challenge-cta .start-btn { padding: 14px 34px; font-size: 19px; letter-spacing: 3px; }
 
@@ -1281,57 +1292,92 @@
                 <h2 class="lobby-title">🎯 个人挑战</h2>
                 <span style="width:40px;display:inline-block;"></span>
             </div>
-            <p class="lobby-subtitle">选择下面的内容，开启你的五子棋进阶学习</p>
+            <p class="lobby-subtitle">点击棋形卡片，在棋盘上动手落子，掌握关键棋形与阵法</p>
 
             <div class="challenge-section">
                 <h3 class="challenge-cat">📘 基础规则</h3>
                 <div class="challenge-list">
-                    <div class="challenge-card" onclick="toggleChallenge(this)">
-                        <div class="ch-card-head"><span class="ch-icon">♟️</span><span class="ch-title">什么是五子棋</span><span class="ch-arrow">▸</span></div>
-                        <div class="ch-card-body">五子棋是双人在 <b>15×15</b> 棋盘的交叉点上轮流落子的棋类游戏。黑棋先手、白棋后手，率先在横向、纵向或斜向连成 <b>连续五子</b> 的一方获胜。</div>
+                    <div class="challenge-card">
+                        <div class="ch-card-head" onclick="toggleChallenge(this.closest('.challenge-card'))"><span class="ch-icon">♟️</span><span class="ch-title">什么是五子棋</span><span class="ch-arrow">▸</span></div>
+                        <div class="ch-card-body">五子棋是双人在 <b>15×15</b> 棋盘交叉点轮流落子的棋类游戏。黑棋先手、白棋后手，率先在横、竖或斜向连成 <b>连续五子</b> 即获胜。</div>
                     </div>
-                    <div class="challenge-card" onclick="toggleChallenge(this)">
-                        <div class="ch-card-head"><span class="ch-icon">🏁</span><span class="ch-title">如何判定胜负</span><span class="ch-arrow">▸</span></div>
-                        <div class="ch-card-body">任意方向上连成 <b>连续五子</b> 即判胜。休闲（无禁手）规则下，连成六子及以上同样判胜（即"长连"也赢）。当棋盘下满仍无人连五，则为和棋。</div>
-                    </div>
-                    <div class="challenge-card" onclick="toggleChallenge(this)">
-                        <div class="ch-card-head"><span class="ch-icon">⚫</span><span class="ch-title">黑棋先手优势</span><span class="ch-arrow">▸</span></div>
-                        <div class="ch-card-body">黑方先落子，天然拥有先手进攻优势。正式比赛中常用 <b>「三手交换」「五手两打」</b> 等规则来平衡先后手；本游戏为休闲对战，黑先即可，自由尽兴。</div>
-                    </div>
-                    <div class="challenge-card" onclick="toggleChallenge(this)">
-                        <div class="ch-card-head"><span class="ch-icon">🚫</span><span class="ch-title">禁手规则（进阶）</span><span class="ch-arrow">▸</span></div>
-                        <div class="ch-card-body">职业规则中，<b>黑棋</b>禁止落出「三三」「四四」「长连」三种禁手（白棋无禁手），以削弱先手优势。本游戏为休闲模式，<b>默认不启用禁手</b>，双方均可自由落子，规则更轻松。</div>
+                    <div class="challenge-card">
+                        <div class="ch-card-head" onclick="toggleChallenge(this.closest('.challenge-card'))"><span class="ch-icon">🏁</span><span class="ch-title">如何判定胜负</span><span class="ch-arrow">▸</span></div>
+                        <div class="ch-card-body">任意方向连成 <b>连续五子</b> 即判胜。本游戏为休闲规则，连成六子及以上（长连）同样判胜；棋盘下满仍无人连五则为和棋。</div>
                     </div>
                 </div>
             </div>
 
             <div class="challenge-section">
-                <h3 class="challenge-cat">⚔️ 棋形与阵法</h3>
+                <h3 class="challenge-cat">⚔️ 棋形与阵法（动手练习）</h3>
                 <div class="challenge-list">
-                    <div class="challenge-card" onclick="toggleChallenge(this)">
-                        <div class="ch-card-head"><span class="ch-icon">🔥</span><span class="ch-title">活四（必胜棋形）</span><span class="ch-arrow">▸</span></div>
-                        <div class="ch-card-body">两端都无子阻挡、再一手即成五，是 <b>必胜棋形</b>。示意：<span class="shape-line"><span class="shape-ico">○ ● ● ● ● ○</span></span>（中间四子两端皆空）。一旦形成活四，对手无法同时堵两端。</div>
+
+                    <div class="challenge-card" data-lesson="huosi">
+                        <div class="ch-card-head" onclick="toggleChallenge(this.closest('.challenge-card'))"><span class="ch-icon">🔥</span><span class="ch-title">活四（必胜棋形）</span><span class="ch-arrow">▸</span></div>
+                        <div class="ch-card-body">
+                            <div class="ch-desc"><b>活四</b>：四子连珠且<b>两端皆空</b>，再一手即可成五，对手无法同时封两端，是必胜棋形。<b>请在棋盘右侧闪烁空位落子</b>，把它连成「活四」。</div>
+                            <canvas class="ch-board" width="440" height="440"></canvas>
+                            <div class="ch-guide">🔆 在闪烁的空位落子，连成两端皆空的「活四」</div>
+                            <div class="ch-feedback" id="fb-huosi"></div>
+                            <div class="ch-actions"><button class="ch-btn" onclick="chReset(event,'huosi',this)">↺ 重置</button></div>
+                        </div>
                     </div>
-                    <div class="challenge-card" onclick="toggleChallenge(this)">
-                        <div class="ch-card-head"><span class="ch-icon">⚡</span><span class="ch-title">冲四（必须防守）</span><span class="ch-arrow">▸</span></div>
-                        <div class="ch-card-body">一端被对方挡住、另一端为空，再一手即成五，<b>必须立即防守</b>。示意：<span class="shape-line"><span class="shape-ico">✕ ● ● ● ● ○</span></span>。冲四是制造「叫杀」的常用手段。</div>
+
+                    <div class="challenge-card" data-lesson="chongsi">
+                        <div class="ch-card-head" onclick="toggleChallenge(this.closest('.challenge-card'))"><span class="ch-icon">⚡</span><span class="ch-title">冲四（必须防守）</span><span class="ch-arrow">▸</span></div>
+                        <div class="ch-card-body">
+                            <div class="ch-desc"><b>冲四</b>：一端被对方挡住、另一端为空，再一手即能成五，<b>对手必须立即防守</b>。左端白棋已封住，<b>请在右端闪烁空位落子</b>，把黑棋补成「冲四」。</div>
+                            <canvas class="ch-board" width="440" height="440"></canvas>
+                            <div class="ch-guide">🔆 在右端闪烁空位落子，形成「冲四」逼对手防守</div>
+                            <div class="ch-feedback" id="fb-chongsi"></div>
+                            <div class="ch-actions"><button class="ch-btn" onclick="chReset(event,'chongsi',this)">↺ 重置</button></div>
+                        </div>
                     </div>
-                    <div class="challenge-card" onclick="toggleChallenge(this)">
-                        <div class="ch-card-head"><span class="ch-icon">🌟</span><span class="ch-title">活三（抢攻要点）</span><span class="ch-arrow">▸</span></div>
-                        <div class="ch-card-body">再一手可发展为活四，威胁极大，需抢先防守或自己抢攻。示意：<span class="shape-line"><span class="shape-ico">○ ● ● ● ○</span></span>。实战中「先做活三」往往是进攻起点。</div>
+
+                    <div class="challenge-card" data-lesson="huosan">
+                        <div class="ch-card-head" onclick="toggleChallenge(this.closest('.challenge-card'))"><span class="ch-icon">🌟</span><span class="ch-title">活三（抢攻要点）</span><span class="ch-arrow">▸</span></div>
+                        <div class="ch-card-body">
+                            <div class="ch-desc"><b>活三</b>：三子连珠且两端皆空，再一手可拓展为活四，是发动进攻的要点。<b>请在右侧闪烁空位落子</b>，把它连成「活三」。</div>
+                            <canvas class="ch-board" width="440" height="440"></canvas>
+                            <div class="ch-guide">🔆 在右侧闪烁空位落子，连成两端皆空的「活三」</div>
+                            <div class="ch-feedback" id="fb-huosan"></div>
+                            <div class="ch-actions"><button class="ch-btn" onclick="chReset(event,'huosan',this)">↺ 重置</button></div>
+                        </div>
                     </div>
-                    <div class="challenge-card" onclick="toggleChallenge(this)">
-                        <div class="ch-card-head"><span class="ch-icon">🌫️</span><span class="ch-title">眠三 / 活二</span><span class="ch-arrow">▸</span></div>
-                        <div class="ch-card-body">眠三：被阻挡、只能形成冲四的三，威胁较弱，示意 <span class="shape-line"><span class="shape-ico">✕ ● ● ● ○</span></span>。活二：再一手可成活三的基础棋形，示意 <span class="shape-line"><span class="shape-ico">○ ● ● ○</span></span>。积小成多、逐步做棋是核心思路。</div>
+
+                    <div class="challenge-card" data-lesson="miansan">
+                        <div class="ch-card-head" onclick="toggleChallenge(this.closest('.challenge-card'))"><span class="ch-icon">🌫️</span><span class="ch-title">眠三 / 活二</span><span class="ch-arrow">▸</span></div>
+                        <div class="ch-card-body">
+                            <div class="ch-desc"><b>活二</b>：两子相连、两端皆空，再一手可成活三，是做棋的基础。<b>请在右侧闪烁空位落子</b>形成「活二」。<br><span style="color:#8a6a3a;">补充：<b>眠三</b>被对方挡住、只能形成冲四，威胁较弱——做棋要优先发展活形。</span></div>
+                            <canvas class="ch-board" width="440" height="440"></canvas>
+                            <div class="ch-guide">🔆 在右侧闪烁空位落子，形成「活二」</div>
+                            <div class="ch-feedback" id="fb-miansan"></div>
+                            <div class="ch-actions"><button class="ch-btn" onclick="chReset(event,'miansan',this)">↺ 重置</button></div>
+                        </div>
                     </div>
-                    <div class="challenge-card" onclick="toggleChallenge(this)">
-                        <div class="ch-card-head"><span class="ch-icon">🧩</span><span class="ch-title">开局阵法（定石）</span><span class="ch-arrow">▸</span></div>
-                        <div class="ch-card-body">黑棋前两手形成的经典阵型称为「定石」，是进攻与连接的起点。常见的有 <b>花月、浦月、流星、云雨、溪月、寒星</b> 等：花月/浦月偏进攻，流星偏平衡。建议先记住 1–2 种，对局中据此展开。</div>
+
+                    <div class="challenge-card" data-lesson="dingshi">
+                        <div class="ch-card-head" onclick="toggleChallenge(this.closest('.challenge-card'))"><span class="ch-icon">🧩</span><span class="ch-title">开局阵法（定石）</span><span class="ch-arrow">▸</span></div>
+                        <div class="ch-card-body">
+                            <div class="ch-desc">黑棋前两手形成的经典阵型称为「定石」，是进攻与连接的起点。常见的有 <b>花月、浦月、流星、云雨、溪月、寒星</b> 等。<b>请在天元下方闪烁空位落子</b>，体验经典「花月」开局的展开思路。</div>
+                            <canvas class="ch-board" width="440" height="440"></canvas>
+                            <div class="ch-guide">🔆 在天元（中心）下方的闪烁空位落子，展开阵型</div>
+                            <div class="ch-feedback" id="fb-dingshi"></div>
+                            <div class="ch-actions"><button class="ch-btn" onclick="chReset(event,'dingshi',this)">↺ 重置</button></div>
+                        </div>
                     </div>
-                    <div class="challenge-card" onclick="toggleChallenge(this)">
-                        <div class="ch-card-head"><span class="ch-icon">🧠</span><span class="ch-title">进攻与防守原则</span><span class="ch-arrow">▸</span></div>
-                        <div class="ch-card-body">① 自己同时拥有多个「冲四/活三」威胁时，对手只能堵一个，另一手即可成五——这就是「多线进攻」。② 防守时优先堵对方 <b>活三、冲四</b>，再看己方能否反杀。③ 棋子要连成「线」而非散点，连接越多越难被防住。</div>
+
+                    <div class="challenge-card" data-lesson="gongfang">
+                        <div class="ch-card-head" onclick="toggleChallenge(this.closest('.challenge-card'))"><span class="ch-icon">🧠</span><span class="ch-title">进攻与防守原则</span><span class="ch-arrow">▸</span></div>
+                        <div class="ch-card-body">
+                            <div class="ch-desc">白棋已组成「活三」威胁。<b>请在左侧闪烁空位落子封堵其一端</b>，阻止其成活四。<br><span style="color:#8a6a3a;">要诀：防守优先堵活三/冲四；进攻则多线制造活三、冲四，让对手顾此失彼。</span></div>
+                            <canvas class="ch-board" width="440" height="440"></canvas>
+                            <div class="ch-guide">🔆 在闪烁空位落子，封堵白棋的「活三」</div>
+                            <div class="ch-feedback" id="fb-gongfang"></div>
+                            <div class="ch-actions"><button class="ch-btn" onclick="chReset(event,'gongfang',this)">↺ 重置</button></div>
+                        </div>
                     </div>
+
                 </div>
             </div>
 
@@ -3519,8 +3565,143 @@
 
         // 个人挑战：展开/收起学习卡片（点击卡片头部切换 .open）
         function toggleChallenge(card) {
+            const willOpen = !card.classList.contains('open');
             card.classList.toggle('open');
+            const id = card.dataset.lesson;
+            if (!id || !LESSONS[id]) return;
+            if (willOpen) chOpen(id, card);
+            else chClose(card);
         }
+
+        // ===== 个人挑战 · 棋盘引导练习 =====
+        // 每个阵法关卡：setup=预置棋子[x,y,color]，target=需点击的落子点，color=玩家落子颜色(1黑)
+        const LESSONS = {
+            huosi:   { setup: [[6,7,1],[7,7,1],[8,7,1]], target: {x:9,y:7}, color: 1,
+                       success: '正确！你连成了两端皆空的「活四」，对手无法同时封堵两端，这是必胜棋形。' },
+            chongsi: { setup: [[5,7,2],[6,7,1],[7,7,1],[8,7,1]], target: {x:9,y:7}, color: 1,
+                       success: '正确！左端被白棋封住，右端补成四子即「冲四」，对手必须立即防守，否则下一手成五。' },
+            huosan:  { setup: [[6,7,1],[7,7,1]], target: {x:8,y:7}, color: 1,
+                       success: '正确！三子连珠且两端皆空即「活三」，是发动进攻的要点，下一手可拓展成活四。' },
+            miansan: { setup: [[6,7,1]], target: {x:7,y:7}, color: 1,
+                       success: '正确！两子相连即「活二」，再一手可成活三。眠三被对方挡住只能形成冲四，威胁较弱——做棋要优先发展活形。' },
+            dingshi: { setup: [[7,7,1],[8,7,2]], target: {x:7,y:8}, color: 1,
+                       success: '正确！黑占天元、白贴一手后，黑在天元下方落子展开，正是经典「花月」开局思路——先建立有连接的阵型。' },
+            gongfang:{ setup: [[5,7,2],[6,7,2],[7,7,2]], target: {x:4,y:7}, color: 1,
+                       success: '正确！白棋已组成「活三」，你封堵其一端阻止其成活四。要诀：防守优先堵活三/冲四；进攻则多线制造活三、冲四，让对手顾此失彼。' }
+        };
+
+        let chActive = [];   // 当前展开的练习棋盘：{cv, state, target, color, done}
+
+        function chEmptyBoard() {
+            return Array.from({ length: BOARD_SIZE }, () => Array(BOARD_SIZE).fill(0));
+        }
+
+        function chOpen(id, card) {
+            const L = LESSONS[id];
+            const cv = card.querySelector('canvas.ch-board');
+            if (!cv) return;
+            const state = chEmptyBoard();
+            L.setup.forEach(([x, y, col]) => { state[y][x] = col; });
+            const entry = { cv, state, target: L.target, color: L.color, done: false };
+            chActive = chActive.filter(a => a.cv !== cv);
+            chActive.push(entry);
+            const fb = document.getElementById('fb-' + id);
+            if (fb) { fb.textContent = ''; fb.className = 'ch-feedback'; }
+        }
+
+        function chClose(card) {
+            const cv = card.querySelector('canvas.ch-board');
+            if (cv) chActive = chActive.filter(a => a.cv !== cv);
+        }
+
+        function chReset(e, id, btn) {
+            e.stopPropagation();
+            const card = btn.closest('.challenge-card');
+            const L = LESSONS[id];
+            const cv = card.querySelector('canvas.ch-board');
+            const entry = chActive.find(a => a.cv === cv);
+            if (entry) {
+                entry.done = false;
+                entry.state = chEmptyBoard();
+                L.setup.forEach(([x, y, col]) => { entry.state[y][x] = col; });
+            }
+            const fb = document.getElementById('fb-' + id);
+            if (fb) { fb.textContent = ''; fb.className = 'ch-feedback'; }
+        }
+
+        function chDraw(cv, state, target, color, phase, done) {
+            const c = cv.getContext('2d');
+            const W = cv.width, H = cv.height;
+            const PAD = Math.round(W * 0.05);
+            const CELL = (W - PAD * 2) / (BOARD_SIZE - 1);
+            c.clearRect(0, 0, W, H);
+            c.fillStyle = '#f0d9b5';
+            c.fillRect(0, 0, W, H);
+            c.strokeStyle = '#8B4513';
+            c.lineWidth = 1;
+            for (let i = 0; i < BOARD_SIZE; i++) {
+                c.beginPath(); c.moveTo(PAD, PAD + i * CELL); c.lineTo(PAD + (BOARD_SIZE - 1) * CELL, PAD + i * CELL); c.stroke();
+                c.beginPath(); c.moveTo(PAD + i * CELL, PAD); c.lineTo(PAD + i * CELL, PAD + (BOARD_SIZE - 1) * CELL); c.stroke();
+            }
+            const stars = [[3,3],[11,3],[3,11],[11,11],[7,7]];
+            c.fillStyle = '#8B4513';
+            for (const [sx, sy] of stars) { c.beginPath(); c.arc(PAD + sx * CELL, PAD + sy * CELL, 3, 0, Math.PI * 2); c.fill(); }
+            // 棋子（黑=实心，白=白底描边）
+            for (let y = 0; y < BOARD_SIZE; y++) {
+                for (let x = 0; x < BOARD_SIZE; x++) {
+                    if (state[y][x]) {
+                        const cx = PAD + x * CELL, cy = PAD + y * CELL, r = CELL / 2 - 2;
+                        c.beginPath(); c.arc(cx, cy, r, 0, Math.PI * 2);
+                        c.fillStyle = (state[y][x] === 1) ? '#1a1a1a' : '#fafafa';
+                        c.fill();
+                        c.lineWidth = 1.5; c.strokeStyle = (state[y][x] === 1) ? '#000' : '#999';
+                        c.stroke();
+                    }
+                }
+            }
+            // 目标点：呼吸式高亮圆环
+            if (target && !done) {
+                const cx = PAD + target.x * CELL, cy = PAD + target.y * CELL, r = CELL / 2 - 1;
+                c.save();
+                c.globalAlpha = 0.35 + 0.5 * phase;
+                c.strokeStyle = '#2ecc40'; c.lineWidth = 3;
+                c.beginPath(); c.arc(cx, cy, r, 0, Math.PI * 2); c.stroke();
+                c.restore();
+                c.fillStyle = 'rgba(46,204,64,0.30)';
+                c.beginPath(); c.arc(cx, cy, r * 0.45, 0, Math.PI * 2); c.fill();
+            }
+        }
+
+        function chLoop(ts) {
+            const phase = (Math.sin(ts / 300) + 1) / 2;
+            for (const a of chActive) chDraw(a.cv, a.state, a.target, a.color, phase, a.done);
+            requestAnimationFrame(chLoop);
+        }
+        requestAnimationFrame(chLoop);
+
+        // 棋盘点击 → 在目标点落子
+        document.addEventListener('click', function (e) {
+            const cv = (e.target && e.target.classList && e.target.classList.contains('ch-board')) ? e.target : null;
+            if (!cv) return;
+            const card = cv.closest('.challenge-card');
+            const id = card.dataset.lesson;
+            const L = LESSONS[id];
+            const entry = chActive.find(a => a.cv === cv);
+            if (!entry || entry.done) return;
+            const rect = cv.getBoundingClientRect();
+            const scale = cv.width / rect.width;
+            const PAD = Math.round(cv.width * 0.05);
+            const CELL = (cv.width - PAD * 2) / (BOARD_SIZE - 1);
+            const mx = (e.clientX - rect.left) * scale, my = (e.clientY - rect.top) * scale;
+            const x = Math.round((mx - PAD) / CELL), y = Math.round((my - PAD) / CELL);
+            const fb = document.getElementById('fb-' + id);
+            if (x === L.target.x && y === L.target.y) {
+                entry.state[y][x] = L.color; entry.done = true;
+                if (fb) { fb.textContent = '✅ ' + L.success; fb.className = 'ch-feedback ok'; }
+            } else if (x >= 0 && x < BOARD_SIZE && y >= 0 && y < BOARD_SIZE && entry.state[y][x] === 0) {
+                if (fb) { fb.textContent = '🤔 这里不是关键点，再看看闪烁的提示位置～'; fb.className = 'ch-feedback warn'; }
+            }
+        });
 
         // ---------- 创建房间（沿用「创建房间」交互，新增密码与执棋选择） ----------
         function handleCreateRoom() { showCreateRoomModal(); }
