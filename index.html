@@ -1309,18 +1309,14 @@
 
             <!-- 关卡选择 -->
             <div id="chSelect">
-                <p class="lobby-subtitle">从简到难，共 200 关 · 前段打基础，后段练阵型</p>
+                <p class="lobby-subtitle">共 200 关 · 前 30 关打基础，31–200 关专练阵型与杀法</p>
                 <div class="ch-progress" id="chProgress">已通关 0 / 200</div>
                 <div class="ch-tier-block">
-                    <h3 class="challenge-cat">🌱 基础（第 1–40 关）</h3>
+                    <h3 class="challenge-cat">🌱 基础引导（第 1–30 关）</h3>
                     <div class="ch-level-grid" id="chGridBasic"></div>
                 </div>
                 <div class="ch-tier-block">
-                    <h3 class="challenge-cat">⚔️ 进阶（第 41–120 关）</h3>
-                    <div class="ch-level-grid" id="chGridAdv"></div>
-                </div>
-                <div class="ch-tier-block">
-                    <h3 class="challenge-cat">🏯 阵型打法（第 121–200 关）</h3>
+                    <h3 class="challenge-cat">🏯 阵型打法（第 31–200 关）</h3>
                     <div class="ch-level-grid" id="chGridForm"></div>
                 </div>
                 <div class="challenge-cta">
@@ -3580,11 +3576,11 @@
             return a;
         }
 
-        // 关卡生成：前段基础(1-40)、中段进阶(41-120)、后段阵型打法(121-200)
-        // 任务类型在各档内用「洗牌周期」打散，避免连续/周期性重复；干扰子偏对方色且可贴近目标垂直方向以增强迷惑
-        const CH_BASIC_TYPES = ['b_live4', 'b_live3', 'b_block4', 'b_block3'];
-        const CH_ADV_TYPES   = ['a_five', 'a_live4', 'a_live3', 'a_block4', 'a_block3'];
-        // 确定性生成「相邻不重复」的任务序列：彻底消除连续/周期性重复，前段也不再背套路
+        // 关卡生成（重构）：前 30 关为「基础引导」（少量操作题，无相邻重复）；31–200 关全部为「阵型打法」——经典杀法 + 阵型摆谱，真正把阵型摆出来
+        const CH_GUIDE_TYPES = ['g_live4', 'g_live3', 'g_block4', 'g_block3', 'g_five'];
+        const CH_KILL_TYPES  = ['k_five', 'k_live4', 'k_double3', 'k_four4', 'k_four3', 'k_rush4'];
+        const CH_FORM_TYPES  = ['f_bagua', 'f_jian', 'f_meihua', 'f_changshe', 'f_lianhua', 'f_lianzhu'];
+        // 确定性生成「相邻不重复」的任务序列：彻底消除连续/周期性重复
         function chSeqNoAdjacent(types, seed, count) {
             const rng = chRng(seed);
             const out = [];
@@ -3593,69 +3589,89 @@
                 do {
                     pick = types[Math.floor(rng() * types.length)];
                     guard++;
-                } while (out.length && pick === out[out.length - 1] && guard < 30);
+                } while (out.length && pick === out[out.length - 1] && guard < 40);
                 out.push(pick);
             }
             return out;
         }
-        const CH_BASIC_SEQ = chSeqNoAdjacent(CH_BASIC_TYPES, 90017, 40);
-        const CH_ADV_SEQ   = chSeqNoAdjacent(CH_ADV_TYPES, 42427, 80);
+        const CH_GUIDE_SEQ = chSeqNoAdjacent(CH_GUIDE_TYPES, 90017, 30);
+        const CH_CAT_SEQ   = chSeqNoAdjacent(['kill', 'form'], 33311, 170); // 31–200 大类交替
+        const CH_KILL_SEQ  = chSeqNoAdjacent(CH_KILL_TYPES, 42427, 120);
+        const CH_FORM_SEQ  = chSeqNoAdjacent(CH_FORM_TYPES, 51517, 120);
+
+        // 阵型摆谱：在棋盘摆出该阵型主体，留一个关键空位让玩家落子补全（照谱）
+        function chFormation(key, rng) {
+            const bs = chEmptyBoard();
+            const cx = 5 + Math.floor(rng() * 5), cy = 5 + Math.floor(rng() * 5);
+            const put = (x, y, c) => { if (x >= 0 && x < BOARD_SIZE && y >= 0 && y < BOARD_SIZE) bs[y][x] = c; };
+            let target = [cx, cy];
+            if (key === 'f_bagua') {            // 八卦阵：米字防御网（留一角待补）
+                put(cx, cy, 1);
+                const around = [[2,0],[-2,0],[0,2],[0,-2],[-2,2],[2,-2],[-2,-2]];
+                for (const [dx,dy] of around) put(cx+dx, cy+dy, 1);
+                target = [cx+2, cy+2];
+            } else if (key === 'f_jian') {     // 剑字阵：剑身 + 剑格（留剑格右端）
+                for (let i = -3; i <= 1; i++) put(cx, cy + i, 1);
+                for (let i = -2; i <= 1; i++) put(cx + i, cy - 3, 1);
+                target = [cx+2, cy-3];
+            } else if (key === 'f_meihua') {   // 梅花阵：五瓣（留花蕊）
+                put(cx+2, cy, 1); put(cx-2, cy, 1); put(cx, cy+2, 1); put(cx, cy-2, 1);
+                target = [cx, cy];
+            } else if (key === 'f_changshe') { // 长蛇阵：一排连子（留蛇头）
+                for (let i = -3; i <= 2; i++) put(cx + i, cy, 1);
+                target = [cx+3, cy];
+            } else if (key === 'f_lianhua') {  // 莲花阵：中心 + 八方位（留一瓣）
+                put(cx, cy, 1);
+                const around = [[2,0],[-2,0],[0,2],[0,-2],[-2,2],[2,-2],[-2,-2]];
+                for (const [dx,dy] of around) put(cx+dx, cy+dy, 1);
+                target = [cx+2, cy+2];
+            } else {                            // f_lianzhu 连珠阵：十字双飞（留交叉点）
+                put(cx-1, cy, 1); put(cx-2, cy, 1); put(cx, cy-1, 1); put(cx, cy-2, 1);
+                target = [cx, cy];
+            }
+            return { board: bs, target };
+        }
+
         function chBuildLevel(n) {
             const rng = chRng(n * 97 + 13);
-            const tier = n <= 40 ? 'basic' : (n <= 120 ? 'adv' : 'form');
+            const tier = n <= 30 ? 'guide' : 'formation';
             const ax = 4 + Math.floor(rng() * 7);
             const ay = 4 + Math.floor(rng() * 7);
             const dir = CH_DIRS[Math.floor(rng() * CH_DIRS.length)];
-            // 干扰密度：前段即给少量干扰、随关卡递增（比旧版更密，增强迷惑）
-            let distract = (n <= 60) ? 2 + Math.floor(n / 10)
-                         : (n <= 120) ? 8 + Math.floor((n - 60) / 8)
-                         : 8 + Math.floor((n - 120) / 8);
             const fx = chFit(ax, dir[0]), fy = chFit(ay, dir[1]);
             const board = chEmptyBoard();
-            let targets = [], color = 1, title = '', desc = '', success = '', goal = '', protectDirs = [dir], protectR = 1;
-            const openings = [
-                { name: '花月', w: [1, 0], a: [0, 1] },
-                { name: '浦月', w: [1, 0], a: [1, 1] },
-                { name: '流星', w: [1, 1], a: [1, -1] },
-                { name: '云雨', w: [0, 1], a: [1, 0] },
-                { name: '溪月', w: [1, 0], a: [0, -1] },
-                { name: '寒星', w: [1, 1], a: [-1, 1] }
-            ];
+            let targets = [], color = 1, title = '', desc = '', success = '', goal = '', protectDirs = [dir], protectR = 1, guided = false, showTarget = false;
 
-            if (tier === 'basic' || tier === 'adv') {
-                const type = (tier === 'basic') ? CH_BASIC_SEQ[n - 1]
-                                                : CH_ADV_SEQ[n - 41];
-                if (type === 'b_live4' || type === 'a_live4') {
-                    title = (type === 'b_live4') ? '补成活四' : '制造活四';
-                    desc = '黑棋已有三子连线，请在<b>任一端空位</b>落子，连成<b>两端皆空</b>的「活四」（必胜棋形）。';
+            if (tier === 'guide') {
+                const type = CH_GUIDE_SEQ[n - 1];
+                guided = true; showTarget = true;
+                if (type === 'g_live4') {
+                    title = '补成活四'; desc = '黑棋已有三子连线，请在<b>任一端空位</b>落子，连成<b>两端皆空</b>的「活四」（必胜棋形）。';
                     chPlaceLine(board, fx, fy, dir, 3, 1);
                     targets = [[fx - dir[0], fy - dir[1]], [fx + 3 * dir[0], fy + 3 * dir[1]]];
-                    success = '正确！你连成了两端皆空的「活四」，对手无法同时封堵两端，这就是必胜棋形。';
+                    success = '正确！两端皆空的「活四」对手无法同时封堵，这就是必胜棋形。';
                     goal = 'live4'; protectDirs = [dir];
-                } else if (type === 'b_live3' || type === 'a_live3') {
-                    title = (type === 'b_live3') ? '补成活三' : '抢攻活三';
-                    desc = '黑棋已有两子连线，请在<b>任一端空位</b>落子，连成<b>两端皆空</b>的「活三」（进攻要点）。';
+                } else if (type === 'g_live3') {
+                    title = '补成活三'; desc = '黑棋已有两子连线，请在<b>任一端空位</b>落子，连成<b>两端皆空</b>的「活三」（进攻要点）。';
                     chPlaceLine(board, fx, fy, dir, 2, 1);
                     targets = [[fx - dir[0], fy - dir[1]], [fx + 2 * dir[0], fy + 2 * dir[1]]];
-                    success = '正确！三子连珠且两端皆空即「活三」，是发动进攻的要点，下一步即可拓展为活四。';
+                    success = '正确！三子连珠且两端皆空即「活三」，是发动进攻的要点。';
                     goal = 'live3'; protectDirs = [dir];
-                } else if (type === 'b_block4' || type === 'a_block4') {
-                    title = (type === 'b_block4') ? '封堵冲四' : '化解冲四';
-                    desc = '白棋已连成三子且一端被你挡住，<b>请在另一端空位落子</b>，阻止其成五。';
+                } else if (type === 'g_block4') {
+                    title = '封堵冲四'; desc = '白棋三子连线且一端被你挡住，<b>请在另一端空位落子</b>阻止其成五。';
                     chPlaceLine(board, fx, fy, dir, 3, 2);
                     board[fy - dir[1]][fx - dir[0]] = 1;
                     targets = [[fx + 3 * dir[0], fy + 3 * dir[1]]];
-                    success = '正确！你封住了白棋「冲四」的成五点，逼其无法立即取胜。';
+                    success = '正确！封住了白棋「冲四」的成五点。';
                     goal = 'block'; protectDirs = [dir];
-                } else if (type === 'b_block3' || type === 'a_block3') {
-                    title = (type === 'b_block3') ? '封堵活三' : '封锁活三';
-                    desc = '白棋已连成三子且两端皆空，<b>请在任一端空位落子</b>封堵，阻止其成活四。';
+                } else if (type === 'g_block3') {
+                    title = '封堵活三'; desc = '白棋三子连线两端皆空，<b>请在任一端空位落子</b>封堵，阻止其成活四。';
                     chPlaceLine(board, fx, fy, dir, 3, 2);
                     targets = [[fx - dir[0], fy - dir[1]], [fx + 3 * dir[0], fy + 3 * dir[1]]];
-                    success = '正确！你封堵了白棋「活三」的一端，防守到位，逼其另谋出路。';
+                    success = '正确！封堵了白棋「活三」一端，防守到位。';
                     goal = 'block'; protectDirs = [dir];
-                } else { // a_five
-                    title = '一击致胜'; desc = '黑棋已连成四子且一端被白挡，<b>请在成五的空位落子</b>，直接获胜！';
+                } else { // g_five
+                    title = '一击致胜'; desc = '黑棋已连成四子且一端被白挡，<b>请在成五空位落子</b>直接获胜！';
                     chPlaceLine(board, fx, fy, dir, 4, 1);
                     board[fy - dir[1]][fx - dir[0]] = 2;
                     targets = [[fx + 4 * dir[0], fy + 4 * dir[1]]];
@@ -3663,31 +3679,83 @@
                     goal = 'five'; protectDirs = [dir];
                 }
             } else {
-                const sub = (n <= 150) ? 'opening' : 'tactic';
-                if (sub === 'opening') {
-                    const op = openings[(n - 121) % openings.length];
-                    const cxp = 7, cyp = 7;
-                    board[cyp][cxp] = 1;
-                    board[cyp + op.w[1]][cxp + op.w[0]] = 2;
-                    targets = [[cxp + op.a[0], cyp + op.a[1]]];
-                    title = '开局·' + op.name;
-                    desc = '经典「' + op.name + '」开局：黑占天元、白贴一手后，<b>请在提示空位落子</b>，展开有连接的阵型。';
-                    success = '正确！这正是「' + op.name + '」开局的展开手，先建立有连接的阵型。';
-                    goal = 'opening'; protectDirs = [op.a];
+                // 阵型段：按大类序列交替取 杀法 / 摆谱
+                let ki = 0, fi = 0;
+                for (let m = 31; m < n; m++) if (CH_CAT_SEQ[m - 31] === 'kill') ki++; else fi++;
+                const cat = CH_CAT_SEQ[n - 31];
+                if (cat === 'kill') {
+                    const type = CH_KILL_SEQ[ki];
+                    showTarget = (n <= 60);   // 前 30 关杀法给提示，之后靠判断
+                    const kcx = 6, kcy = 7;
+                    if (type === 'k_five') {
+                        title = '一击成五'; desc = '黑棋四子将连，<b>在成五空位落子</b>直接取胜！';
+                        chPlaceLine(board, kcx, kcy, [1,0], 4, 1);
+                        board[kcy][kcx-1] = 2;
+                        targets = [[kcx+4, kcy]];
+                        success = '正确！五子连珠，一击制胜！';
+                        goal = 'five'; protectDirs = [[1,0]]; protectR = 2;
+                    } else if (type === 'k_live4') {
+                        title = '活四必胜'; desc = '黑棋三子连线，<b>在任一端空位落子</b>连成「活四」，对手无法同时封堵。';
+                        chPlaceLine(board, kcx, kcy, [1,0], 3, 1);
+                        targets = [[kcx-1, kcy], [kcx+3, kcy]];
+                        success = '正确！活四两端皆空，必胜棋形！';
+                        goal = 'live4'; protectDirs = [[1,0]]; protectR = 2;
+                    } else if (type === 'k_double3') {
+                        title = '三三杀着'; desc = '黑棋在交叉处留有缺口，<b>在中心空位落子</b>，同时形成两条「活三」，让对手顾此失彼。';
+                        board[kcy][kcx-1] = 1; board[kcy][kcx-2] = 1;
+                        board[kcy-1][kcx] = 1; board[kcy+1][kcx] = 1;
+                        targets = [[kcx, kcy]];
+                        success = '正确！一子落下造出两个活三（三三杀），对手只能防一个！';
+                        goal = 'double3'; protectDirs = [[1,0],[0,1]]; protectR = 3;
+                    } else if (type === 'k_four4') {
+                        title = '双四杀着'; desc = '黑棋两个方向各差一子成「四」，<b>在交叉空位落子</b>，同时形成两个「四」，对手堵不住！';
+                        board[kcy][kcx-1] = 1; board[kcy][kcx-2] = 1; board[kcy][kcx-3] = 1;
+                        board[kcy-1][kcx] = 1; board[kcy-2][kcx] = 1; board[kcy-3][kcx] = 1;
+                        targets = [[kcx, kcy]];
+                        success = '正确！一子双四（四四杀），两个「四」各有一端可成五，对手无法同时防守！';
+                        goal = 'four4'; protectDirs = [[1,0],[0,1]]; protectR = 4;
+                    } else if (type === 'k_four3') {
+                        title = '四三杀着'; desc = '黑棋落一子可同时成「四」与「活三」，<b>在交叉空位落子</b>形成四三杀！';
+                        board[kcy][kcx-1] = 1; board[kcy][kcx-2] = 1; board[kcy][kcx-3] = 1;
+                        board[kcy-1][kcx] = 1; board[kcy-2][kcx] = 1;
+                        targets = [[kcx, kcy]];
+                        success = '正确！一子同时成「四」与「活三」（四三杀），下一手必成杀！';
+                        goal = 'four3'; protectDirs = [[1,0],[0,1]]; protectR = 3;
+                    } else { // k_rush4
+                        title = '冲四叫杀'; desc = '黑棋三子连线、一端被白挡，<b>在成四空位落子</b>形成「冲四」逼对手防守。';
+                        board[kcy][kcx-1] = 1; board[kcy][kcx-2] = 1; board[kcy][kcx-3] = 1;
+                        board[kcy][kcx+1] = 2;
+                        targets = [[kcx, kcy]];
+                        success = '正确！形成「冲四」叫杀，对手必须应一手，你已掌握主动！';
+                        goal = 'rush4'; protectDirs = [[1,0]]; protectR = 4;
+                    }
                 } else {
-                    const cxp = 5 + Math.floor(rng() * 5), cyp = 5 + Math.floor(rng() * 5);
-                    board[cyp][cxp - 2] = 1; board[cyp][cxp - 1] = 1;
-                    board[cyp - 1][cxp] = 1; board[cyp + 1][cxp] = 1;
-                    targets = [[cxp, cyp]];
-                    const TACTIC_TITLES = ['双三杀着', '一子双杀', '双三陷阱', '交叉攻势', '双三连防', '十字妙手'];
-                    title = TACTIC_TITLES[(n - 151) % TACTIC_TITLES.length];
-                    desc = '黑棋在交叉处留有缺口，<b>在中心空位落子</b>，可同时形成两条「活三」，让对手顾此失彼。';
-                    success = '正确！一子落下同时造出两个活三（双三），对手只能防一个，另一手即可取胜！';
-                    goal = 'double3'; protectDirs = [[1, 0], [0, 1]]; protectR = 3;
+                    const type = CH_FORM_SEQ[fi];
+                    showTarget = true;        // 摆谱：照谱落子，始终提示落点
+                    const f = chFormation(type, rng);
+                    for (let y = 0; y < BOARD_SIZE; y++) for (let x = 0; x < BOARD_SIZE; x++) board[y][x] = f.board[y][x];
+                    targets = [f.target];
+                    const FMETA = {
+                        f_bagua:   ['八卦阵', '黑子按米字环绕成防御网，重心稳、联络多，是经典的防守阵型。', '你补全了八卦阵的关键点，阵型联络完整、攻守兼备！'],
+                        f_jian:    ['剑字阵', '竖为剑身、横为剑格，攻守一体，利于从中路突破。', '你补全了剑字阵的剑格端点，阵型成形，锋芒毕露！'],
+                        f_meihua:  ['梅花阵', '五子如梅花五瓣，中心为花蕊，四向呼应，便于展开。', '你落下花蕊，梅花阵五瓣呼应，连接紧密！'],
+                        f_changshe:['长蛇阵', '一子连成一串如长蛇，便于顺势延展、铺开战线。', '你接上蛇头，长蛇阵连绵不断，攻势可顺势推进！'],
+                        f_lianhua: ['莲花阵', '中心加八方位如莲花绽放，四周呼应、难以被分割。', '你补全莲花阵的一瓣，八面呼应，阵脚稳固！'],
+                        f_lianzhu: ['连珠阵', '十字双线交叉，一子落定即两头生根，便于做棋连接。', '你落下交叉点，连珠阵双线生根，做棋空间大开！']
+                    };
+                    const meta = FMETA[type];
+                    title = '摆谱·' + meta[0];
+                    desc = '「' + meta[0] + '」：' + meta[1] + ' <b>请在闪烁空位落子</b>，照谱补全阵型。';
+                    success = '正确！' + meta[2];
+                    goal = 'opening'; protectDirs = [[0,0]]; protectR = 0;
                 }
             }
 
-            // 干扰子：保护核心格 / 目标格 / 沿关键线方向两侧 protectR 格（其余允许，可贴近目标垂直方向制造视觉迷惑）
+            // 干扰子：引导段少量、杀法段适中、摆谱段极少（保持阵型清晰）
+            let distract;
+            if (tier === 'guide') distract = 2 + Math.floor(n / 10);
+            else if (CH_CAT_SEQ[n - 31] === 'kill') distract = 4 + Math.floor((n - 30) / 12);
+            else distract = 2;
             const reserved = new Set();
             const key = (x, y) => y * BOARD_SIZE + x;
             for (let y = 0; y < BOARD_SIZE; y++) for (let x = 0; x < BOARD_SIZE; x++) if (board[y][x]) reserved.add(key(x, y));
@@ -3710,7 +3778,7 @@
                 placed++;
             }
 
-            return { n, tier, title, desc, success, color, targets, board, guided: n <= 60, goal };
+            return { n, tier, title, desc, success, color, targets, board, guided, showTarget, goal };
         }
 
         // 检测 board 上 color 的连续段（len 长度）：open=两端皆空的段数，any=总段数
@@ -3735,11 +3803,34 @@
         }
 
         // 实时判定：玩家落子后，棋盘是否已达成该关目标棋形
+        // 统计 color 的「四」数量：4 子连珠且至少一端可成五（含活四与冲四）
+        function chCountFours(board, color) {
+            let cnt = 0;
+            for (const [dx, dy] of CH_DIRS) {
+                for (let y = 0; y < BOARD_SIZE; y++) for (let x = 0; x < BOARD_SIZE; x++) {
+                    let ok = true;
+                    for (let i = 0; i < 4; i++) {
+                        const nx = x + dx * i, ny = y + dy * i;
+                        if (nx < 0 || nx >= BOARD_SIZE || ny < 0 || ny >= BOARD_SIZE || board[ny][nx] !== color) { ok = false; break; }
+                    }
+                    if (!ok) continue;
+                    const bx = x - dx, by = y - dy, ax = x + dx * 4, ay = y + dy * 4;
+                    const bE = (bx >= 0 && bx < BOARD_SIZE && by >= 0 && by < BOARD_SIZE && board[by][bx] === 0);
+                    const aE = (ax >= 0 && ax < BOARD_SIZE && ay >= 0 && ay < BOARD_SIZE && board[ay][ax] === 0);
+                    if (bE || aE) cnt++;
+                }
+            }
+            return cnt;
+        }
+
         function chCheckGoal(board, color, goal) {
             if (goal === 'five') return chCountRuns(board, color, 5).any > 0;
             if (goal === 'live4') return chCountRuns(board, color, 4).open > 0;
             if (goal === 'live3') return chCountRuns(board, color, 3).open > 0;
             if (goal === 'double3') return chCountRuns(board, color, 3).open >= 2;
+            if (goal === 'four4') return chCountFours(board, color) >= 2;
+            if (goal === 'four3') return chCountFours(board, color) >= 1 && chCountRuns(board, color, 3).open >= 1;
+            if (goal === 'rush4') return chCountFours(board, color) >= 1;
             // 'block' / 'opening' 由点击是否命中 targets 决定（见点击处理），此处返回 false
             return false;
         }
@@ -3784,12 +3875,11 @@
         function chRenderGrids() {
             const grids = {
                 basic: document.getElementById('chGridBasic'),
-                adv: document.getElementById('chGridAdv'),
                 form: document.getElementById('chGridForm')
             };
             for (const k in grids) grids[k].innerHTML = '';
             for (let n = 1; n <= CH_TOTAL; n++) {
-                const tier = n <= 40 ? 'basic' : (n <= 120 ? 'adv' : 'form');
+                const tier = n <= 30 ? 'basic' : 'form';
                 const btn = document.createElement('button');
                 btn.className = 'ch-level-btn';
                 const unlocked = n <= chProgress.unlockedMax;
@@ -3807,11 +3897,11 @@
             chCurrent = chBuildLevel(n);
             chState = chCurrent.board.map(r => r.slice());
             chDoneFlag = false;
-            chShowTarget = chCurrent.guided;
+            chShowTarget = chCurrent.showTarget;
             document.getElementById('chPlayTitle').textContent = '第 ' + n + ' 关 · ' + chCurrent.title;
             document.getElementById('chPlayDesc').innerHTML = chCurrent.desc;
             const fb = document.getElementById('chFeedback'); fb.textContent = ''; fb.className = 'ch-feedback';
-            document.getElementById('chGuide').textContent = chCurrent.guided
+            document.getElementById('chGuide').textContent = chCurrent.showTarget
                 ? '🔆 在闪烁的空位落子' : '🧩 找出最佳一手（卡住可点「💡 提示」）';
             document.getElementById('chSelect').style.display = 'none';
             document.getElementById('chPlay').style.display = 'block';
@@ -3847,7 +3937,7 @@
             if (!chCurrent) return;
             chState = chCurrent.board.map(r => r.slice());
             chDoneFlag = false;
-            chShowTarget = chCurrent.guided;
+            chShowTarget = chCurrent.showTarget;
             chPlayMove = null;
             const fb = document.getElementById('chFeedback'); fb.textContent = ''; fb.className = 'ch-feedback';
             chDrawBoard(0.5);
