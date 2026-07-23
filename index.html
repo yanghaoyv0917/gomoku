@@ -218,15 +218,16 @@
 
         /* ===== 排行榜页面 ===== */
         .leaderboard-body { width: min(660px, 92vw); margin: 12px auto 30px; }
-        .lb-head, .lb-row { display: grid; grid-template-columns: 64px 1fr 90px 70px; align-items: center; padding: 10px 14px; border-radius: 10px; }
+        .lb-head, .lb-row { display: grid; grid-template-columns: 64px 1fr 90px 70px 56px; align-items: center; padding: 10px 14px; border-radius: 10px; }
         .lb-head { background: linear-gradient(145deg,#e8743b,#c8551f); color: #fff; font-size: 15px; letter-spacing: 1px; font-family: 'KaiTi','楷体',serif; }
-        .lb-head .lb-rating, .lb-head .lb-games { text-align: right; }
+        .lb-head .lb-rating, .lb-head .lb-games, .lb-head .lb-wins { text-align: right; }
         .lb-row { background: rgba(255,255,255,.72); border: 1px solid #e0cba6; margin-top: 6px; font-size: 15px; color: #3a2a14; }
         .lb-row.me { background: linear-gradient(145deg,#fff3d6,#ffe2ad); border-color: #e8743b; font-weight: 700; }
         .lb-rank { font-weight: 700; color: #a8431f; text-align: center; }
         .lb-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         .lb-rating { text-align: right; color: #c8551f; font-weight: 700; }
         .lb-games { text-align: right; color: #a67c52; }
+        .lb-wins { text-align: right; color: #7a9a3a; }
         .leaderboard-empty { width: min(660px,92vw); margin: 40px auto; text-align: center; color: #a67c52; font-size: 15px; line-height: 1.8; }
 
         /* —— 200 关关卡选择 —— */
@@ -1402,7 +1403,7 @@
                 <h2 class="lobby-title">🏆 积分排行榜</h2>
                 <button class="refresh-btn-inline" onclick="refreshLeaderboard()" title="刷新排行榜">⟳</button>
             </div>
-            <p class="lobby-subtitle">所有用户积分排名 · 前 100 名<br><span class="lb-src">数据来源：GitHub 仓库 ratings.json（计分服务每局同步）</span></p>
+            <p class="lobby-subtitle">所有用户积分排名 · 前 100 名<br><span class="lb-src">数据来源：GitHub 仓库用户个人数据（data/users.json，积分写入每位用户数据，读取时刷新）</span></p>
             <div id="leaderboardBody" class="leaderboard-body"></div>
         </div>
 
@@ -1742,10 +1743,14 @@
             if (!oppUid || oppUid === 'guest') return;   // 对手无账号则不计分
             const winnerUid = (myResult === 'win') ? currentUser : (myResult === 'lose' ? oppUid : '');
             pendingScoreGameId = currentRoom.matchNonce;
+            // 上报本机用户的昵称/头像，便于服务端写入个人用户数据（排行榜据此展示昵称）
+            const myProfNick = (myNickname || userProfile.nickname || currentUser) || '';
+            const myProfAvatar = (myAvatar || userProfile.avatar || '') || '';
             try {
                 if (mqttClient && mqttClient.connected) {
                     mqttClient.publish(SCORE_REQ_TOPIC, JSON.stringify({
-                        gameId: currentRoom.matchNonce, a: currentUser, b: oppUid, winner: winnerUid
+                        gameId: currentRoom.matchNonce, a: currentUser, b: oppUid, winner: winnerUid,
+                        aNick: myProfNick, aAvatar: myProfAvatar
                     }), { qos: 0 });
                 }
             } catch (e) {}
@@ -1782,7 +1787,7 @@
         const PRESENCE_PREFIX = 'gomoku/presence/';
         const LEADERBOARD_TOPIC = 'gomoku/leaderboard';
         // 排行榜数据源：仓库中的 ratings.json（权威）。客户端直接拉取该文件制作排行榜。
-        const GITHUB_RATINGS_URL = 'https://cdn.jsdelivr.net/gh/yanghaoyv0917/gomoku@main/data/ratings.json';
+        const GITHUB_USERS_URL = 'https://cdn.jsdelivr.net/gh/yanghaoyv0917/gomoku@main/data/users.json';
         const PRESENCE_TTL_GLOBAL = 25000;     // 全局好友在线判定阈值（ms）
         const PRESENCE_PUB_INTERVAL = 10000;   // 全局在线心跳间隔（ms）
         const SOCIAL_QOS = 1;
@@ -2054,11 +2059,12 @@
         function fetchGitHubLeaderboard() {
             const el = document.getElementById('leaderboardBody');
             if (el && !leaderboardData) el.innerHTML = '<p class="leaderboard-empty">正在从 GitHub 仓库加载排行榜…</p>';
-            const apiUrl = 'https://api.github.com/repos/yanghaoyv0917/gomoku/contents/data/ratings.json?ref=main';
+            // 排行榜依据「库中用户个人信息数据」（data/users.json）刷新
+            const apiUrl = 'https://api.github.com/repos/yanghaoyv0917/gomoku/contents/data/users.json?ref=main';
             const tryApi = () => fetch(apiUrl, { headers: { 'Accept': 'application/vnd.github+json' }, cache: 'no-store' })
                 .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
                 .then(j => { applyLeaderboard(JSON.parse(b64ToStr(j.content))); });
-            const tryCdn = () => fetch(GITHUB_RATINGS_URL, { cache: 'no-store' })
+            const tryCdn = () => fetch(GITHUB_USERS_URL, { cache: 'no-store' })
                 .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
                 .then(obj => { applyLeaderboard(obj); });
             tryApi().catch(() => tryCdn().catch(e => {
@@ -2066,21 +2072,33 @@
                 if (!leaderboardData && el) el.innerHTML = '<p class="leaderboard-empty">暂无排行数据（计分服务尚未产生对局，或无法访问仓库）。<br>可在好友对局后点右上角 ⟳ 刷新查看。</p>';
             }));
         }
+        // MQTT 排行榜信号（服务端发布的刷新 ping）：直接依据仓库用户数据重拉并刷新
         function handleLeaderboardMsg(payload) {
-            try { applyLeaderboard(JSON.parse(payload.toString())); } catch (e) {}
+            try {
+                const p = JSON.parse(payload.toString());
+                if (p && p.updated) fetchGitHubLeaderboard();
+            } catch (e) {}
         }
-        // 归一化：支持两种格式——{uid:{rating,games}}（GitHub 仓库）或 [{rank,uid,rating,games}]（MQTT 实时）
+        // 归一化：支持仓库「个人用户数据」格式 {uid:{uid,nick,avatar,rating,games,wins}}
         function normalizeLeaderboard(data) {
             let arr;
-            if (Array.isArray(data)) {
-                arr = data.map(r => ({ uid: r.uid, rating: Number(r.rating) || 0, games: Number(r.games) || 0 }));
-            } else if (data && typeof data === 'object') {
-                arr = Object.keys(data).map(uid => ({ uid: uid, rating: Number(data[uid].rating) || 0, games: Number(data[uid].games) || 0 }));
+            if (data && typeof data === 'object' && !Array.isArray(data)) {
+                arr = Object.keys(data).map(uid => {
+                    const u = data[uid] || {};
+                    return {
+                        uid: uid,
+                        nick: u.nick || uid,
+                        avatar: u.avatar || '',
+                        rating: Number(u.rating) || 0,
+                        games: Number(u.games) || 0,
+                        wins: Number(u.wins) || 0
+                    };
+                });
             } else {
                 return [];
             }
             arr.sort((x, y) => (y.rating - x.rating) || (x.uid < y.uid ? -1 : 1));
-            return arr.slice(0, 100).map((r, i) => ({ rank: i + 1, uid: r.uid, rating: r.rating, games: r.games }));
+            return arr.slice(0, 100).map((r, i) => ({ rank: i + 1, uid: r.uid, nick: r.nick, avatar: r.avatar, rating: r.rating, games: r.games, wins: r.wins }));
         }
         function applyLeaderboard(data) {
             leaderboardData = normalizeLeaderboard(data);
@@ -2101,14 +2119,16 @@
                 el.innerHTML = '<p class="leaderboard-empty">暂无积分数据</p>';
                 return;
             }
-            let html = '<div class="lb-head"><span class="lb-rank">排名</span><span class="lb-name">玩家</span><span class="lb-rating">积分</span><span class="lb-games">对局</span></div>';
+            let html = '<div class="lb-head"><span class="lb-rank">排名</span><span class="lb-name">玩家</span><span class="lb-rating">积分</span><span class="lb-games">对局</span><span class="lb-wins">胜</span></div>';
             leaderboardData.forEach(r => {
                 const me = (socialReady() && r.uid === currentUser) ? ' me' : '';
+                const name = (r.avatar ? r.avatar + ' ' : '') + (socEscapeHtml(r.nick || r.uid));
                 html += '<div class="lb-row' + me + '">' +
                     '<span class="lb-rank">' + r.rank + '</span>' +
-                    '<span class="lb-name">' + socEscapeHtml(r.uid) + '</span>' +
+                    '<span class="lb-name">' + name + '</span>' +
                     '<span class="lb-rating">' + r.rating + '</span>' +
-                    '<span class="lb-games">' + (r.games || 0) + '</span></div>';
+                    '<span class="lb-games">' + (r.games || 0) + '</span>' +
+                    '<span class="lb-wins">' + (r.wins || 0) + '</span></div>';
             });
             el.innerHTML = html;
         }
