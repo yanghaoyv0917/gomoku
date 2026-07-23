@@ -3764,10 +3764,16 @@
                 ? '🔆 在闪烁的空位落子' : '🧩 找出最佳一手（卡住可点「💡 提示」）';
             document.getElementById('chSelect').style.display = 'none';
             document.getElementById('chPlay').style.display = 'block';
-            const nb = document.getElementById('chNextBtn');
-            nb.disabled = (n >= CH_TOTAL) || (n + 1 > chProgress.unlockedMax);
-            nb.style.opacity = nb.disabled ? 0.4 : 1;
+            chRefreshNextBtn();
             chDrawBoard(0.5);
+        }
+
+        // 根据当前关卡与已解锁进度，刷新「下一关」按钮可用状态
+        function chRefreshNextBtn() {
+            const nb = document.getElementById('chNextBtn');
+            if (!nb || !chCurrent) return;
+            nb.disabled = (chCurrent.n >= CH_TOTAL) || (chCurrent.n + 1 > chProgress.unlockedMax);
+            nb.style.opacity = nb.disabled ? 0.4 : 1;
         }
 
         function chBackToSelect() {
@@ -3816,6 +3822,7 @@
                     chProgress.unlockedMax = Math.max(chProgress.unlockedMax, Math.min(CH_TOTAL, chCurrent.n + 1));
                     chSaveProgress();
                     fb.textContent = '✅ ' + chCurrent.success; fb.className = 'ch-feedback ok';
+                    chRefreshNextBtn();
                     chDrawBoard(0.5);
                 } else if (x >= 0 && x < BOARD_SIZE && y >= 0 && y < BOARD_SIZE && chState[y][x] === 0) {
                     fb.textContent = '🤔 这里不是关键点，再想想～'; fb.className = 'ch-feedback warn';
