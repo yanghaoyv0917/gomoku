@@ -2997,12 +2997,23 @@
 
         // 找到能一步制胜的落子点（针对 color）
         function findImmediateWin(b, color) {
-            for (let y=0;y<BOARD_SIZE;y++) for (let x=0;x<BOARD_SIZE;x++) {
-                if (b[y][x] !== 0) continue;
-                b[y][x] = color;
-                const win = isWin(b, x, y, color);
-                b[y][x] = 0;
-                if (win) return { x, y };
+            // 一步即胜的落点必然落在某已有棋子（同色子相邻处，否则无法成五连线）的 8 邻域内，
+            // 故只扫描棋子相邻的空点即可（正确性不变，速度约 3 倍）。
+            const seen = new Set();
+            for (let y = 0; y < BOARD_SIZE; y++) for (let x = 0; x < BOARD_SIZE; x++) {
+                if (b[y][x] === 0) continue;
+                for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+                    if (dx === 0 && dy === 0) continue;
+                    const nx = x + dx, ny = y + dy;
+                    if (!inBounds(nx, ny) || b[ny][nx] !== 0) continue;
+                    const key = ny * BOARD_SIZE + nx;
+                    if (seen.has(key)) continue;
+                    seen.add(key);
+                    b[ny][nx] = color;
+                    const win = isWin(b, nx, ny, color);
+                    b[ny][nx] = 0;
+                    if (win) return { x: nx, y: ny };
+                }
             }
             return null;
         }
@@ -3016,8 +3027,8 @@
             if (myWin) return myWin;                 // 自己一步即胜 → 直接走
             const oppWin = findImmediateWin(b, opp);
             if (oppWin) return oppWin;               // 对手一步即胜 → 拦截
-            // 否则用候选启发式选点（仅相邻候选）
-            const cands = getCandidates(b, mover, 16);
+            // 否则用候选启发式选点（仅相邻候选）；rollout 只取前 4，故候选池 16→10 不影响选点、省 evalAround 开销
+            const cands = getCandidates(b, mover, 10);
             if (!cands.length) return null;
             const top = cands.slice(0, Math.min(4, cands.length));
             if (Math.random() < 0.15) return top[Math.floor(Math.random() * top.length)];
@@ -3054,35 +3065,59 @@
             return boards;
         }
         // 分块计算胜率序列（避免卡 UI），逐手 setTimeout 让出主线程，完成后回调 onDone(series)
+        // 加速：每 REPLAY_SAMPLE 手才真正做蒙特卡洛模拟，其余手用相邻已模拟点的线性插值填充（曲线依旧平滑）
         function computeReplaySeries(boards, myColor, rollouts, onProgress, onDone) {
-            const series = [{ my: 50, opp: 50 }];
+            const total = boards.length;
+            const simVals = new Array(total).fill(null);   // 下标 -> {my,opp}，仅真正模拟/跳过的手有值
             const oppColor = myColor === 1 ? 2 : 1;
             let i = 1;
             function step() {
-                if (i < boards.length) {
+                if (i < total) {
                     const b = boards[i];
                     // 早盘均势：棋子很少时胜率约 50/50，跳过昂贵模拟（省时且足够准）
                     let stones = 0;
                     for (let y = 0; y < BOARD_SIZE; y++) for (let x = 0; x < BOARD_SIZE; x++) if (b[y][x]) stones++;
                     if (stones <= 6) {
-                        series.push({ my: 50, opp: 50 });
-                        i++; onProgress(i, boards.length); setTimeout(step, 0); return;
+                        simVals[i] = { my: 50, opp: 50 };
+                        i++; onProgress(i, total); setTimeout(step, 0); return;
                     }
                     // 决定性位置：一方一步即胜 → 直接判定，跳过整局模拟（省时）
                     if (findImmediateWin(b, myColor)) {
-                        series.push({ my: 100, opp: 0 });
-                        i++; onProgress(i, boards.length); setTimeout(step, 0); return;
+                        simVals[i] = { my: 100, opp: 0 };
+                        i++; onProgress(i, total); setTimeout(step, 0); return;
                     }
                     if (findImmediateWin(b, oppColor)) {
-                        series.push({ my: 0, opp: 100 });
-                        i++; onProgress(i, boards.length); setTimeout(step, 0); return;
+                        simVals[i] = { my: 0, opp: 100 };
+                        i++; onProgress(i, total); setTimeout(step, 0); return;
                     }
-                    const w = aiPredictWin(b, myColor, rollouts);
-                    series.push({ my: Math.round(w * 10) / 10, opp: Math.round((100 - w) * 10) / 10 });
+                    // 仅抽样手真正模拟，其余留空待插值
+                    if (i % REPLAY_SAMPLE === 0 || i === total - 1) {
+                        const w = aiPredictWin(b, myColor, rollouts);
+                        simVals[i] = { my: Math.round(w * 10) / 10, opp: Math.round((100 - w) * 10) / 10 };
+                    }
                     i++;
-                    onProgress(i, boards.length);
+                    onProgress(i, total);
                     setTimeout(step, 0);
                 } else {
+                    // 用线性插值把未模拟的手补齐，得到与步数 1:1 对齐的 series
+                    const series = [{ my: 50, opp: 50 }];
+                    let prev = 0;
+                    for (let k = 1; k < total; k++) {
+                        if (simVals[k]) { series.push(simVals[k]); prev = k; }
+                        else {
+                            let nxt = -1;
+                            for (let j = k + 1; j < total; j++) if (simVals[j]) { nxt = j; break; }
+                            if (nxt === -1) series.push(simVals[prev]);
+                            else {
+                                const t = (k - prev) / (nxt - prev);
+                                const a = simVals[prev], c = simVals[nxt];
+                                series.push({
+                                    my: Math.round((a.my + (c.my - a.my) * t) * 10) / 10,
+                                    opp: Math.round((a.opp + (c.opp - a.opp) * t) * 10) / 10
+                                });
+                            }
+                        }
+                    }
                     onDone(series);
                 }
             }
@@ -4066,8 +4101,9 @@
         let replayIdx = 0;       // 已展示到第几手（0 = 空盘）
         let replayTimer = null;
         let replayCanvas = null, replayCtx = null, replayChartCanvas = null, replayChartCtx = null, replayProbSeries = [], replayMyColor = 1;
-        const REPLAY_ROLLOUTS = 6;    // 回看胜率模拟的蒙特卡洛次数（越多越准、越慢；6 局已能在 10s 内完成）
+        const REPLAY_ROLLOUTS = 3;    // 回看胜率模拟的蒙特卡洛次数（越多越准、越慢；3 局 + 采样足以在数秒内完成）
         const REPLAY_MAX_PLIES = 60;  // 单局模拟步数上限，防止极端长局拖慢（超时未分胜负按和棋计）
+        const REPLAY_SAMPLE = 3;      // 每 N 手才真正模拟一次胜率，其余用线性插值（大幅提速、曲线依旧平滑）
         function openReplay(game) {
             if (!game || !game.moves || !game.moves.length) { showToast('该对局暂无回放数据'); return; }
             stopReplayPlay();
