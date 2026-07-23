@@ -1786,6 +1786,7 @@
         const INVITE_PREFIX = 'gomoku/invite/';
         const PRESENCE_PREFIX = 'gomoku/presence/';
         const LEADERBOARD_TOPIC = 'gomoku/leaderboard';
+        const PROFILE_SET_TOPIC = 'gomoku/profile/set'; // 实时上报个人资料（昵称/头像）变化到计分服务，服务端即时写入仓库个人用户数据
         // 排行榜数据源：仓库中的 ratings.json（权威）。客户端直接拉取该文件制作排行榜。
         const GITHUB_USERS_URL = 'https://cdn.jsdelivr.net/gh/yanghaoyv0917/gomoku@main/data/users.json';
         const PRESENCE_TTL_GLOBAL = 25000;     // 全局好友在线判定阈值（ms）
@@ -1825,6 +1826,19 @@
             const payload = (obj === '' || obj == null) ? '' : JSON.stringify(obj);
             try { mqttClient.publish(topic, payload, { qos: SOCIAL_QOS, retain: true }); } catch (e) {}
         }
+        // 实时上报个人资料（昵称/头像）变化：服务端据此即时写入仓库个人用户数据，排行榜随之刷新。
+        // 头像若为本地上传的 data:URL（体积较大）则不上传，避免 MQTT/仓库膨胀；该情况下头像仍在对局结算时随赛果上报。
+        function publishProfileUpdate() {
+            if (!socialReady() || !mqttClient || !mqttClient.connected) return;
+            const nick = (myNickname || userProfile.nickname || currentUser || '').toString().trim();
+            if (!nick) return;
+            let avatar = (myAvatar || userProfile.avatar || '').toString();
+            if (avatar.startsWith('data:')) avatar = '';
+            try {
+                mqttClient.publish(PROFILE_SET_TOPIC, JSON.stringify({ uid: currentUser, nick: nick, avatar: avatar }), { qos: 0 });
+                console.log('[profile] 已实时上报个人资料（昵称）到计分服务:', nick);
+            } catch (e) {}
+        }
         function subscribeSocialTopics() {
             if (!mqttClient || !mqttClient.connected || !socialReady()) return;
             const me = currentUser;
@@ -1833,6 +1847,7 @@
             mqttClient.subscribe(INVITE_PREFIX + me + '/+', { qos: SOCIAL_QOS });
             mqttClient.subscribe(LEADERBOARD_TOPIC, { qos: SOCIAL_QOS });
             refreshFriendPresenceSubs();
+            publishProfileUpdate(); // 登录/连接即实时同步当前昵称到计分服务（无需先打一局）
         }
         function refreshFriendPresenceSubs() {
             if (!mqttClient || !mqttClient.connected) return;
@@ -6072,6 +6087,7 @@
             myNickname = nn;
             myAvatar = userProfile.avatar;
             updateUserBadge();
+            publishProfileUpdate(); // 实时把昵称变化上报计分服务 → 写入仓库个人用户数据
             // 若已在房间内，同步本地头像显示（不影响已发出的对手信息）
             if (document.getElementById('selfAvatar')) renderAvatarEl(document.getElementById('selfAvatar'), myAvatar);
             closeProfilePanel();
