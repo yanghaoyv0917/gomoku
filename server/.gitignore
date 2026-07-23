@@ -1,0 +1,7 @@
+# 依赖
+node_modules/
+
+# 运行时状态（由服务自动生成/重置）
+ratings.json
+seen.json
+.server.lock
