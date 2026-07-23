@@ -1309,7 +1309,7 @@
 
             <!-- 关卡选择 -->
             <div id="chSelect">
-                <p class="lobby-subtitle">共 200 关 · 前 30 关打基础，31–200 关在真实棋局中演练取胜杀法</p>
+                <p class="lobby-subtitle">共 200 关 · 前 30 关打基础，31–200 关真实棋局取胜（双方等子、密集成势、后期含变式阵法）</p>
                 <div class="ch-progress" id="chProgress">已通关 0 / 200</div>
                 <div class="ch-tier-block">
                     <h3 class="challenge-cat">🌱 基础引导（第 1–30 关）</h3>
@@ -3597,6 +3597,15 @@
         }
         const CH_GUIDE_SEQ = chSeqNoAdjacent(CH_GUIDE_TYPES, 90017, 30);
         const CH_WIN_SEQ   = chSeqNoAdjacent(CH_WIN_TYPES, 77001, 170); // 31–200 取胜杀法，无相邻重复
+        // 后期关卡（n>=131）融入「变式阵法知识」，循环展示不同阵型渊源与要点
+        const CH_VARIANT_FORMS = [
+            ['游龙阵', '游龙阵是长蛇阵的变式：子力沿斜线蜿蜒延展、攻防一体，便于在侧翼突然发难、声东击西。'],
+            ['八卦变式', '八卦阵变式以米字联络替代满盘布点，留白更多、机动更强，是经典「以静制动、后发制人」的防守转攻阵型。'],
+            ['梅花变式', '梅花阵变式在五瓣之外暗藏一枝「接应子」，看似分散实则互相呼应，利于多点做棋、伺机成势。'],
+            ['连星阵', '连星阵取棋盘星位连点成势，子力外扩、控制要津，是开局抢势的常见变式，重在占点与联络。'],
+            ['云阵', '云阵子力如层云叠布、虚实相间，专于以厚势压人、循序渐进，讲究「势」的积累而非一子得失。'],
+            ['锋矢阵', '锋矢阵以一点为锋、两翼为矢，集中兵力于一点突破，是强攻型变式，适合劣势下搏杀。']
+        ];
 
         // 沿方向 dir 在 (cx,cy) 起偏移 off 处连续放置 len 子
         function chPlaceRun(b, cx, cy, dir, len, color, off) {
@@ -3644,8 +3653,59 @@
             return { board: b, targets, goal, protectDirs, protectR };
         }
 
-        // 在核心棋形之外布置「真实棋局」背景：黑白双方均有落子，像一盘真实对局
-        function addRealGameBackground(board, targets, protectDirs, protectR, n, rng) {
+        // 落子后该色在 (x,y) 处的最长连子数（4 方向最大），用于禁止误成四/五连
+        function chRunLenAt(board, x, y, color) {
+            const axes = [[1,0],[0,1],[1,1],[1,-1]];
+            let maxv = 1;
+            for (const [dx,dy] of axes) {
+                let c = 1;
+                for (let s=1; s<5; s++) { const nx=x+dx*s, ny=y+dy*s; if (nx<0||nx>=BOARD_SIZE||ny<0||ny>=BOARD_SIZE||board[ny][nx]!==color) break; c++; }
+                for (let s=1; s<5; s++) { const nx=x-dx*s, ny=y-dy*s; if (nx<0||nx>=BOARD_SIZE||ny<0||ny>=BOARD_SIZE||board[ny][nx]!==color) break; c++; }
+                if (c > maxv) maxv = c;
+            }
+            return maxv;
+        }
+        // 以「生长」方式在战团中心附近连片生成某色棋子（密集成团、阵型相连），且不成 >=maxRun 连
+        function chGrowBlob(board, reserved, color, num, centers, rng, maxRun) {
+            const key = (x, y) => y * BOARD_SIZE + x;
+            const dirs = [[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]];
+            const blob = [];
+            let guard = 0;
+            while (blob.length === 0 && guard < 4000) {        // 落种子（优先战团附近，失败则全盘随机兜底）
+                guard++;
+                let x, y;
+                if (guard < 3000) {
+                    const c = centers[Math.floor(rng() * centers.length)];
+                    const r = Math.floor(rng() * 3);
+                    const ang = rng() * Math.PI * 2;
+                    x = c[0] + Math.round(Math.cos(ang) * r);
+                    y = c[1] + Math.round(Math.sin(ang) * r);
+                } else {
+                    x = Math.floor(rng() * BOARD_SIZE); y = Math.floor(rng() * BOARD_SIZE);
+                }
+                if (x < 0 || x >= BOARD_SIZE || y < 0 || y >= BOARD_SIZE) continue;
+                if (board[y][x] !== 0 || reserved.has(key(x, y))) continue;
+                board[y][x] = color;
+                if (chRunLenAt(board, x, y, color) >= maxRun) { board[y][x] = 0; continue; }
+                blob.push([x, y]);
+            }
+            let g2 = 0;
+            while (blob.length < num && g2 < 12000) {          // 随机游走连片扩张，形成相连色块
+                g2++;
+                const [bx, by] = blob[Math.floor(rng() * blob.length)];
+                const d = dirs[Math.floor(rng() * dirs.length)];
+                const x = bx + d[0], y = by + d[1];
+                if (x < 0 || x >= BOARD_SIZE || y < 0 || y >= BOARD_SIZE) continue;
+                if (board[y][x] !== 0 || reserved.has(key(x, y))) continue;
+                board[y][x] = color;
+                if (chRunLenAt(board, x, y, color) >= maxRun) { board[y][x] = 0; continue; }
+                blob.push([x, y]);
+            }
+            return blob.length;
+        }
+
+        // 在核心棋形之外布置「真实棋局」背景：双方棋子等数、密集成团、阵型交错复杂
+        function addRealGameBackground(board, targets, protectDirs, protectR, n, rng, goal) {
             const reserved = new Set();
             const key = (x, y) => y * BOARD_SIZE + x;
             for (let y = 0; y < BOARD_SIZE; y++) for (let x = 0; x < BOARD_SIZE; x++) if (board[y][x]) reserved.add(key(x, y));
@@ -3658,31 +3718,32 @@
                     }
                 }
             }
-            const count = 10 + Math.floor((n - 30) / 8);   // 关卡越后，棋局越密（更像真实中盘）
-            let placed = 0, guard = 0;
-            while (placed < count && guard < 2000) {
-                guard++;
-                const x = Math.floor(rng() * BOARD_SIZE), y = Math.floor(rng() * BOARD_SIZE);
-                if (reserved.has(key(x, y)) || board[y][x] !== 0) continue;
-                board[y][x] = (rng() < 0.5) ? 2 : 1;
-                reserved.add(key(x, y));
-                placed++;
-            }
-            // 保证双方都有相当数量棋子（更像真实对局）
-            function ensureColor(color, minN) {
-                let cnt = 0;
-                for (let y = 0; y < BOARD_SIZE; y++) for (let x = 0; x < BOARD_SIZE; x++) if (board[y][x] === color) cnt++;
+            // 真实棋局：双方棋子等数、密集成团、阵型交错复杂；密度随关卡递增（越后期越像真实中盘混战）
+            let per = 6 + Math.floor((n - 30) / 6);   // 每方 6..~29 子
+            per = Math.min(per, 30);
+            const clusters = [];
+            const nc = 2 + (n > 110 ? 1 : 0) + (n > 170 ? 1 : 0); // 2..4 个「战团」中心
+            for (let i = 0; i < nc; i++) clusters.push([6 + Math.floor(rng() * 5), 6 + Math.floor(rng() * 5)]);
+            // 背景黑子最长连子限制：三三杀关背景黑子不能成「活三」（否则与核心叠加会误判已达成）；其余关禁成四/五连
+            const blackMax = (goal === 'double3') ? 3 : 4;
+            chGrowBlob(board, reserved, 1, per, clusters, rng, blackMax);
+            chGrowBlob(board, reserved, 2, per, clusters, rng, 4);
+            // 平衡双方总数，使真实棋局双方棋数相同（黑含取胜核心，故白补到与之相等）
+            function countColor(c) { let k = 0; for (let y = 0; y < BOARD_SIZE; y++) for (let x = 0; x < BOARD_SIZE; x++) if (board[y][x] === c) k++; return k; }
+            let cb = countColor(1), cw = countColor(2);
+            const need = Math.max(cb, cw);
+            function topUp(c, mx) {
                 let g = 0;
-                while (cnt < minN && g < 500) {
+                while (countColor(c) < need && g < 4000) {
                     g++;
                     const x = Math.floor(rng() * BOARD_SIZE), y = Math.floor(rng() * BOARD_SIZE);
                     const k = key(x, y);
                     if (reserved.has(k) || board[y][x] !== 0) continue;
-                    board[y][x] = color; reserved.add(k); cnt++;
+                    board[y][x] = c;
+                    if (chRunLenAt(board, x, y, c) >= mx) { board[y][x] = 0; continue; }
                 }
             }
-            ensureColor(2, 4);   // 白棋（对手）至少 4 子
-            ensureColor(1, 7);   // 黑棋（含核心）至少 7 子，整体更像中盘对局
+            if (cb < cw) topUp(1, blackMax); else if (cw < cb) topUp(2, 4);
         }
 
         // 校验：初始未达成目标、双方均无五连、目标落子后必胜
@@ -3762,7 +3823,7 @@
                         do { dirB = CH_DIRS[Math.floor(rng2() * CH_DIRS.length)]; } while (dirB === dirA);
                     }
                     const core = buildWinCore(type, cx, cy, dirA, dirB);
-                    addRealGameBackground(core.board, core.targets, core.protectDirs, core.protectR, n, rng2);
+                    addRealGameBackground(core.board, core.targets, core.protectDirs, core.protectR, n, rng2, core.goal);
                     if (validateWin(core.board, core.targets, 1, core.goal)) built = core;
                 }
                 if (!built) built = buildWinCore(type, 7, 7, [1, 0], [0, 1]); // 兜底（理论不触发）
@@ -3777,6 +3838,10 @@
                 };
                 const w = WINFO[type];
                 title = w[0]; desc = '<b>' + w[1] + '</b>'; success = w[2];
+                if (n >= 131) {   // 后期关卡融入「变式阵法知识」
+                    const vf = CH_VARIANT_FORMS[(n - 131) % CH_VARIANT_FORMS.length];
+                    desc += '<br><span style="color:#a06a00;font-size:13px;line-height:1.6;">📖 变式阵法 · ' + vf[0] + '：' + vf[1] + '</span>';
+                }
             }
 
             // 干扰子：仅「基础引导」段补充少量干扰；阵型实战段已在 buildWinCore 内布置真实棋局背景
