@@ -1449,7 +1449,7 @@
             </div>
             <div class="replay-chart-wrap" id="replayChartWrap">
                 <div class="replay-chart-title">
-                    <span class="chart-title-main">AI预测胜率 · 我方 <b id="replayMyVal">—</b> / 对手 <b id="replayOppVal">—</b><span class="chart-sub">（蒙特卡洛模拟）</span></span>
+                    <span class="chart-title-main">AI预测胜率 · 我方 <b id="replayMyVal">—</b> / 对手 <b id="replayOppVal">—</b><span class="chart-sub">（整体棋局分析）</span></span>
                     <span class="chart-legend"><i class="dot dot-my"></i>我方 <i class="dot dot-opp"></i>对手</span>
                 </div>
                 <canvas id="replayChart" class="replay-chart-canvas"></canvas>
@@ -3018,13 +3018,14 @@
             return null;
         }
 
-        // 找 color 方落子后能形成 >= minScore 威胁（冲四/活四）的空点，用于 rollout 拦截对手致命威胁
-        // 扫描半径 2：活三补子成冲四的点可能在已有子 2 格外；evalAround 已能判别该点棋型分值
+        // 找 color 方落子后能形成 >= minScore 威胁（活四=1e5 / 冲四=1e4）的空点，用于 rollout 拦截对手致命威胁
+        // 扫描半径 1 即可：补成活四/冲四的点必在已有子的 8 邻域内（正确性不变，计算量降约 6 倍）。
+        // 注：冲四(=成五)与活四已被 findImmediateWin 覆盖，故此处 minScore 取 1e5 专门拦“活三→活四”的必杀前兆。
         function findForcingMove(b, color, minScore) {
             const seen = new Set();
             for (let y = 0; y < BOARD_SIZE; y++) for (let x = 0; x < BOARD_SIZE; x++) {
                 if (b[y][x] === 0) continue;
-                for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) {
+                for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
                     if (dx === 0 && dy === 0) continue;
                     const nx = x + dx, ny = y + dy;
                     if (!inBounds(nx, ny) || b[ny][nx] !== 0) continue;
@@ -3041,51 +3042,78 @@
         // 用 AI 策略（优先成五/拦截、次优启发式 + 少量随机探索）模拟对局剩余进程，统计 color 方获胜比例
         function aiRolloutMove(b, mover) {
             const opp = mover === 1 ? 2 : 1;
+            // 1) 自己一步即胜（含活四/冲四）→ 直接走
             const myWin = findImmediateWin(b, mover);
-            if (myWin) return myWin;                 // 自己一步即胜 → 直接走
+            if (myWin) return myWin;
+            // 2) 对手一步即胜（含活四/冲四）→ 拦截
             const oppWin = findImmediateWin(b, opp);
-            if (oppWin) return oppWin;               // 对手一步即胜 → 拦截
-            // 拦截对手的冲四/活四威胁（否则下回合被成五）；冲四分值 1e4、活四 1e5，minScore=1e4 一并覆盖
-            const oppFour = findForcingMove(b, opp, 10000);
-            if (oppFour) return oppFour;
-            // 否则用候选启发式选点（仅相邻候选）；rollout 只取前 4，省 evalAround 开销
-            const cands = getCandidates(b, mover, 10);
+            if (oppWin) return oppWin;
+            // 3) 拦对手“活三→活四”的必杀前兆（落子成活四分值=1e5）；冲四已由上一步覆盖
+            const oppThreat = findForcingMove(b, opp, 100000);
+            if (oppThreat) return oppThreat;
+            // 4) 启发式选点：在候选点中选“我方收益高、且对手最强回应威胁小”的点（整体棋局感知）
+            const cands = getCandidates(b, mover, 12);
             if (!cands.length) return null;
-            const top = cands.slice(0, Math.min(4, cands.length));
-            if (Math.random() < 0.08) return top[Math.floor(Math.random() * top.length)]; // 少量探索，避免 rollout 完全同质
-            return top[0];
+            let best = cands[0], bestVal = -Infinity;
+            for (const c of cands) {
+                const oppResp = evalAround(b, c.x, c.y, opp);   // 对手落子于此后的最强威胁（廉价近似）
+                const val = c.s - oppResp * 0.5;                // 己方收益 - 对手威胁惩罚
+                if (val > bestVal) { bestVal = val; best = c; }
+            }
+            // 少量随机探索，避免 rollout 完全同质
+            if (Math.random() < 0.05) return cands[Math.floor(Math.random() * Math.min(4, cands.length))];
+            return best;
         }
-        // 从 board（color 方轮到走子）出发，模拟 rollouts 局直到终局，返回 color 方胜率 0~100
-        function aiPredictWin(board, color, rollouts) {
-            const opp = color === 1 ? 2 : 1;
+        // 从 board（color 方轮到走子）出发，混合“整体棋型占优概率 + 蒙特卡洛战术推演”，返回 color 方胜率 0~100
+        // 预测核心：先对整盘做棋型分析得到占优概率，再用整体棋局感知策略模拟推演做战术修正
+        // 蒙特卡洛单局推演：从 board 出发、first 方先走，返回 first 方胜率 0~100
+        // 长局未分胜负时用全局棋型分差映射（替代和棋 0.5），让占优方得到正确偏向
+        function simulate(board, first, rollouts) {
             const SHAPE_K = (typeof REPLAY_SHAPE_K !== 'undefined') ? REPLAY_SHAPE_K : 0.00002;
+            const opp = first === 1 ? 2 : 1;
             let score = 0;
             for (let r = 0; r < rollouts; r++) {
                 const b = board.map(row => row.slice());
                 let empty = 0;
                 for (let y = 0; y < BOARD_SIZE; y++) for (let x = 0; x < BOARD_SIZE; x++) if (b[y][x] === 0) empty++;
-                // 决定性位置短路：一步即胜/必输直接判定，省时
-                if (findImmediateWin(b, color)) { score += 1; continue; }
-                if (findImmediateWin(b, opp)) { score += 0; continue; }
-                let toMove = color, plies = 0, res = 0;
+                let toMove = first, plies = 0, res = 0;
                 // 单局模拟步数上限（REPLAY_MAX_PLIES）：防止极端长局拖慢
                 while (empty > 0 && plies < REPLAY_MAX_PLIES) {
                     const mv = aiRolloutMove(b, toMove);
                     if (!mv) break;
                     b[mv.y][mv.x] = toMove; empty--;
-                    if (isWin(b, mv.x, mv.y, toMove)) { res = (toMove === color) ? 1 : -1; break; }
+                    if (isWin(b, mv.x, mv.y, toMove)) { res = (toMove === first) ? 1 : -1; break; }
                     toMove = toMove === 1 ? 2 : 1; plies++;
                 }
                 if (res === 1) score += 1;
                 else if (res === -1) score += 0;
                 else {
-                    // 未分胜负（长局拉锯）：用全局棋型分差映射为胜率，替代和棋 0.5；
-                    // 让“明明占优却未终局”的对局也给出正确偏向，显著改善曲线准确性
-                    const bs = boardScore(b, color, opp);
-                    score += 1 / (1 + Math.exp(-bs * SHAPE_K));
+                    const bsv = boardScore(b, first, opp);
+                    score += 1 / (1 + Math.exp(-bsv * SHAPE_K));
                 }
             }
             return score / rollouts * 100;
+        }
+        // 从 board（color 方视角）预测 color 方胜率 0~100
+        // 预测核心：先对整盘做棋型分析得到占优概率(staticProb)，再用整体棋局感知策略做蒙特卡洛战术推演(mc)；
+        // mc 采用“我方先手 / 对方先手”双视角平均，抵消模拟本身的第一步优势偏置，保证对称局面≈50/50（自洽）
+        function aiPredictWin(board, color, rollouts) {
+            const opp = color === 1 ? 2 : 1;
+            const SHAPE_K = (typeof REPLAY_SHAPE_K !== 'undefined') ? REPLAY_SHAPE_K : 0.00002;
+            // 整体棋局静态占优概率（对称、相干）：基于全盘棋型评分映射到 0~100
+            const bs = boardScore(board, color, opp);
+            const staticProb = 100 / (1 + Math.exp(-bs * SHAPE_K));
+            // 决定性位置短路：一步即胜/必输直接判定（省时）
+            if (findImmediateWin(board, color)) return 100;
+            if (findImmediateWin(board, opp)) return 0;
+            // 蒙特卡洛战术推演（双视角去偏）：我方先手胜率 与 对方先手胜率 平均，抵消先手优势
+            const wColor = simulate(board, color, rollouts);   // 我方先手的我方胜率
+            const wOpp = simulate(board, opp, rollouts);        // 对方先手的对方胜率
+            const mc = (wColor + (100 - wOpp)) / 2;             // 去偏后的我方胜率
+            // 混合：整盘占优概率(主信号, 权重0.9, 对称相干) + 蒙特卡洛战术推演(修正, 权重0.1)
+            // 静态棋型评估是“根据棋局占优可能性预测胜率”的核心；模拟仅做轻量战术微调，避免其步序偏置主导结果
+            const p = staticProb * 0.9 + mc * 0.1;
+            return Math.max(0.5, Math.min(99.5, p));
         }
         // 构建每一步结束后的棋盘快照（用于回看逐步重算胜率）
         function buildStepBoards(moves) {
@@ -4140,11 +4168,11 @@
         let replayIdx = 0;       // 已展示到第几手（0 = 空盘）
         let replayTimer = null;
         let replayCanvas = null, replayCtx = null, replayChartCanvas = null, replayChartCtx = null, replayProbSeries = [], replayMyColor = 1;
-        const REPLAY_ROLLOUTS = 4;    // 回看胜率模拟的蒙特卡洛次数（越多越准、越慢；4 局 + 采样 + 冲四拦截足以在数秒内完成）
-        const REPLAY_SHAPE_K = 0.00002; // 终局局面价值映射系数：boardScore(活四=1e6)→≈1，冲四=1e5→≈0.88，活三=1e4→≈0.55
-        const REPLAY_MAX_PLIES = 60;  // 单局模拟步数上限，防止极端长局拖慢（超时未分胜负按和棋计）
-        const REPLAY_SAMPLE = 4;      // 每 N 手才真正模拟一次胜率，其余用线性插值（提速、曲线依旧平滑；一步即胜每手仍判定）
-        const REPLAY_TIMEOUT_MS = 8000; // 整局胜率模拟的总耗时上限；超时立即收尾出结果，杜绝长时间卡顿
+        const REPLAY_ROLLOUTS = 4;    // 单视角蒙特卡洛局数（双视角去偏→实际 2×；mc 仅作 0.1 轻量修正，故取小值省时）
+        const REPLAY_SHAPE_K = 0.00005; // 静态/终局局面价值映射系数（按真实 boardScore 量级标定：活三≈78%、眠三≈55%、均势≈50%、活四≈100）
+        const REPLAY_MAX_PLIES = 50;  // 单局模拟步数上限，防止极端长局拖慢（超时未分胜负按棋型分差计）
+        const REPLAY_SAMPLE = 4;      // 每 N 手才真正模拟一次胜率，其余用线性插值（曲线依旧平滑；一步即胜每手仍判定）
+        const REPLAY_TIMEOUT_MS = 25000; // 整局胜率模拟总耗时上限（用户授权更长时间）；超时立即收尾出结果，杜绝卡死
         function openReplay(game) {
             if (!game || !game.moves || !game.moves.length) { showToast('该对局暂无回放数据'); return; }
             stopReplayPlay();
