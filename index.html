@@ -3061,34 +3061,62 @@
         function buildStepBoards(moves) {
             const boards = [Array.from({ length: BOARD_SIZE }, () => Array(BOARD_SIZE).fill(0))];
             const b = Array.from({ length: BOARD_SIZE }, () => Array(BOARD_SIZE).fill(0));
-            for (const m of moves) { b[m.y][m.x] = m.c; boards.push(b.map(r => r.slice())); }
+            // 归一化颜色为数字（战绩里 c 可能是字符串），否则 isWin 的 !== 比较会因 '1'!==1 失效，
+            // 导致模拟单局永远判不出胜负、越算越慢（数百手对局可达数分钟）
+            for (const m of moves) { const c = Number(m.c) || 0; if (c) { b[m.y][m.x] = c; boards.push(b.map(r => r.slice())); } }
             return boards;
         }
         // 分块计算胜率序列（避免卡 UI），逐手 setTimeout 让出主线程，完成后回调 onDone(series)
         // 加速：每 REPLAY_SAMPLE 手才真正做蒙特卡洛模拟，其余手用相邻已模拟点的线性插值填充（曲线依旧平滑）
+        // 熔断：整体超过 REPLAY_TIMEOUT_MS 立即收尾（用插值/沿用），保证任何对局都在数秒内出结果，杜绝长时间卡顿
         function computeReplaySeries(boards, myColor, rollouts, onProgress, onDone) {
             const total = boards.length;
             const simVals = new Array(total).fill(null);   // 下标 -> {my,opp}，仅真正模拟/跳过的手有值
             const oppColor = myColor === 1 ? 2 : 1;
+            const start = Date.now();
+            const TIMEOUT = (typeof REPLAY_TIMEOUT_MS !== 'undefined') ? REPLAY_TIMEOUT_MS : 8000;
             let i = 1;
+            function finish() {
+                // 用线性插值把未模拟的手补齐，得到与步数 1:1 对齐的 series
+                const series = [{ my: 50, opp: 50 }];
+                let prev = 0;
+                for (let k = 1; k < total; k++) {
+                    if (simVals[k]) { series.push(simVals[k]); prev = k; }
+                    else {
+                        let nxt = -1;
+                        for (let j = k + 1; j < total; j++) if (simVals[j]) { nxt = j; break; }
+                        if (nxt === -1) series.push(simVals[prev] || { my: 50, opp: 50 });
+                        else {
+                            const t = (k - prev) / (nxt - prev);
+                            const a = simVals[prev], c = simVals[nxt];
+                            series.push({
+                                my: Math.round((a.my + (c.my - a.my) * t) * 10) / 10,
+                                opp: Math.round((a.opp + (c.opp - a.opp) * t) * 10) / 10
+                            });
+                        }
+                    }
+                }
+                onDone(series);
+            }
             function step() {
                 if (i < total) {
+                    if (Date.now() - start > TIMEOUT) { finish(); return; }   // 超时熔断：立即收尾，绝不无限等待
                     const b = boards[i];
                     // 早盘均势：棋子很少时胜率约 50/50，跳过昂贵模拟（省时且足够准）
                     let stones = 0;
                     for (let y = 0; y < BOARD_SIZE; y++) for (let x = 0; x < BOARD_SIZE; x++) if (b[y][x]) stones++;
                     if (stones <= 6) {
                         simVals[i] = { my: 50, opp: 50 };
-                        i++; onProgress(i, total); setTimeout(step, 0); return;
+                        i++; onProgress(i, total, Date.now() - start); setTimeout(step, 0); return;
                     }
                     // 决定性位置：一方一步即胜 → 直接判定，跳过整局模拟（省时）
                     if (findImmediateWin(b, myColor)) {
                         simVals[i] = { my: 100, opp: 0 };
-                        i++; onProgress(i, total); setTimeout(step, 0); return;
+                        i++; onProgress(i, total, Date.now() - start); setTimeout(step, 0); return;
                     }
                     if (findImmediateWin(b, oppColor)) {
                         simVals[i] = { my: 0, opp: 100 };
-                        i++; onProgress(i, total); setTimeout(step, 0); return;
+                        i++; onProgress(i, total, Date.now() - start); setTimeout(step, 0); return;
                     }
                     // 仅抽样手真正模拟，其余留空待插值
                     if (i % REPLAY_SAMPLE === 0 || i === total - 1) {
@@ -3096,29 +3124,10 @@
                         simVals[i] = { my: Math.round(w * 10) / 10, opp: Math.round((100 - w) * 10) / 10 };
                     }
                     i++;
-                    onProgress(i, total);
+                    onProgress(i, total, Date.now() - start);
                     setTimeout(step, 0);
                 } else {
-                    // 用线性插值把未模拟的手补齐，得到与步数 1:1 对齐的 series
-                    const series = [{ my: 50, opp: 50 }];
-                    let prev = 0;
-                    for (let k = 1; k < total; k++) {
-                        if (simVals[k]) { series.push(simVals[k]); prev = k; }
-                        else {
-                            let nxt = -1;
-                            for (let j = k + 1; j < total; j++) if (simVals[j]) { nxt = j; break; }
-                            if (nxt === -1) series.push(simVals[prev]);
-                            else {
-                                const t = (k - prev) / (nxt - prev);
-                                const a = simVals[prev], c = simVals[nxt];
-                                series.push({
-                                    my: Math.round((a.my + (c.my - a.my) * t) * 10) / 10,
-                                    opp: Math.round((a.opp + (c.opp - a.opp) * t) * 10) / 10
-                                });
-                            }
-                        }
-                    }
-                    onDone(series);
+                    finish();
                 }
             }
             step();
@@ -4104,10 +4113,11 @@
         const REPLAY_ROLLOUTS = 3;    // 回看胜率模拟的蒙特卡洛次数（越多越准、越慢；3 局 + 采样足以在数秒内完成）
         const REPLAY_MAX_PLIES = 60;  // 单局模拟步数上限，防止极端长局拖慢（超时未分胜负按和棋计）
         const REPLAY_SAMPLE = 3;      // 每 N 手才真正模拟一次胜率，其余用线性插值（大幅提速、曲线依旧平滑）
+        const REPLAY_TIMEOUT_MS = 8000; // 整局胜率模拟的总耗时上限；超时立即收尾出结果，杜绝长时间卡顿
         function openReplay(game) {
             if (!game || !game.moves || !game.moves.length) { showToast('该对局暂无回放数据'); return; }
             stopReplayPlay();
-            replayMoves = game.moves;
+            replayMoves = (game.moves || []).map(function (m) { return { x: m.x, y: m.y, c: (Number(m.c) || 1) }; });
             replayMyColor = (typeof game.myColor === 'number') ? game.myColor : 1;   // 旧联机记录缺省黑方
             // 用 AI 蒙特卡洛模拟逐步重算胜率序列（我方 / 对手），使新旧对局均准确
             replayProbSeries = [{ my: 50, opp: 50 }];
@@ -4133,7 +4143,7 @@
             applyReplayTo(0);
             // 分块 AI 模拟，避免阻塞 UI；完成后用完整序列重绘图表
             computeReplaySeries(stepBoards, replayMyColor, REPLAY_ROLLOUTS,
-                function (done, total) { loadingEl.textContent = 'AI 模拟棋局中… ' + done + '/' + total; },
+                function (done, total, elapsedMs) { loadingEl.textContent = 'AI 模拟棋局中… ' + done + '/' + total + '（已用 ' + Math.round((elapsedMs || 0) / 1000) + 's）'; },
                 function (series) { replayProbSeries = series; loadingEl.style.display = 'none'; drawReplayChart(replayIdx); });
         }
         function drawReplayBoard() {
