@@ -1787,6 +1787,8 @@
         const PRESENCE_PREFIX = 'gomoku/presence/';
         const LEADERBOARD_TOPIC = 'gomoku/leaderboard';
         const PROFILE_SET_TOPIC = 'gomoku/profile/set'; // 实时上报个人资料（昵称/头像）变化到计分服务，服务端即时写入仓库个人用户数据
+        const ADMIN_USERS_TOPIC = 'gomoku/admin/users'; // 计分服务发布的完整注册用户表（retained），管理员页的权威数据源
+        const PROFILE_DEL_TOPIC = 'gomoku/profile/del'; // 管理员注销用户：发布 {uid} 通知计分服务删除
         // 排行榜数据源：仓库中的 ratings.json（权威）。客户端直接拉取该文件制作排行榜。
         const GITHUB_USERS_URL = 'https://cdn.jsdelivr.net/gh/yanghaoyv0917/gomoku@main/data/users.json';
         const PRESENCE_TTL_GLOBAL = 25000;     // 全局好友在线判定阈值（ms）
@@ -5662,6 +5664,7 @@
             }
         }
         function adminLogout() {
+            if (_adminMsgHandler) { try { mqttClient && mqttClient.off('message', _adminMsgHandler); } catch (e) {} _adminMsgHandler = null; }
             localStorage.removeItem(SESSION_KEY);
             localStorage.removeItem(AUTH_TOKEN_KEY);
             currentUser = null;
@@ -5671,12 +5674,14 @@
             switchPage('authPage');
             setAuthHint('');
         }
-        // 管理员注销指定用户账号：向该账号主题发布空保留消息即可清除其记录
+        // 管理员注销指定用户账号：清除 MQTT 账户保留消息，并通知计分服务从注册用户表删除
         function deleteAccount(btn, username) {
             if (!confirm('确定要注销用户「' + username + '」的账号吗？\n该用户将无法再登录，且操作不可恢复。')) return;
-            const topic = accountTopic(username);
             if (mqttReady()) {
-                mqttClient.publish(topic, '', { qos: 1, retain: true });
+                // 清掉该用户在 MQTT 账户主题下的保留消息（兼容旧账户存储）
+                mqttClient.publish(accountTopic(username), '', { qos: 1, retain: true });
+                // 通知计分服务删除该用户（服务端会重推最新注册用户表）
+                mqttClient.publish(PROFILE_DEL_TOPIC, JSON.stringify({ uid: username }), { qos: 0 });
             } else {
                 alert('MQTT 未连接，注销失败，请重试');
                 return;
@@ -5733,21 +5738,38 @@
             listEl.innerHTML = '<p class="admin-loading">正在加载用户列表…</p>';
             const ok = await waitForMqtt();
             if (!ok) { listEl.innerHTML = '<p class="admin-loading">MQTT 未连接，无法获取用户列表</p>'; return; }
-            const all = await fetchAllAccounts(3000);
-            const users = all
-                .filter(x => x.username !== ADMIN_USER && x.rec)
-                .map(x => ({
-                    username: x.username,
-                    display: x.rec.display || x.username,
-                    avatar: x.rec.avatar || '🙂',
-                    password: x.rec.password || null,
-                    lastLogin: x.rec.lastLogin || null
-                }))
-                .sort((a, b) => (b.lastLogin || 0) - (a.lastLogin || 0));
-            document.getElementById('adminUserCount').textContent = users.length;
-            if (!users.length) { listEl.innerHTML = '<p class="admin-loading">暂无注册用户</p>'; return; }
+            // 计分服务发布的完整注册用户表（权威源）：订阅即收到保留消息，后续每次变化实时刷新
+            const onAdmin = (t, payload) => {
+                if (t !== ADMIN_USERS_TOPIC) return;
+                try {
+                    const p = JSON.parse(payload.toString());
+                    if (p && Array.isArray(p.users)) renderAdminList(p.users);
+                } catch (e) {}
+            };
+            if (_adminMsgHandler) { try { mqttClient.off('message', _adminMsgHandler); } catch (e) {} }
+            _adminMsgHandler = onAdmin;
+            mqttClient.on('message', onAdmin);
+            mqttClient.subscribe(ADMIN_USERS_TOPIC, { qos: 1 }, () => {});
+            // 兜底：若计分服务暂无数据，再合并 MQTT 账户主题里已注册的用户
+            const accts = await fetchAllAccounts(2500);
+            if (!_adminUsersCache.length && accts.length) {
+                const extra = accts
+                    .filter(x => x.username !== ADMIN_USER && x.rec)
+                    .map(x => ({ uid: x.username, nick: x.rec.display || x.username, avatar: x.rec.avatar || '🙂', rating: 1500, games: 0, wins: 0 }));
+                renderAdminList(extra);
+            }
+        }
+        let _adminMsgHandler = null;
+        let _adminUsersCache = [];
+        // 渲染管理员用户列表（users: [{uid,nick,avatar,rating,games,wins}]）
+        function renderAdminList(users) {
+            _adminUsersCache = users || [];
+            const listEl = document.getElementById('adminUserList');
+            const cnt = document.getElementById('adminUserCount');
+            cnt.textContent = _adminUsersCache.length;
+            if (!_adminUsersCache.length) { listEl.innerHTML = '<p class="admin-loading">暂无注册用户</p>'; return; }
             listEl.innerHTML = '';
-            users.forEach(u => {
+            _adminUsersCache.forEach(u => {
                 const row = document.createElement('div');
                 row.className = 'admin-row';
                 const av = document.createElement('span');
@@ -5756,17 +5778,16 @@
                 info.className = 'admin-info';
                 const name = document.createElement('div');
                 name.className = 'admin-name';
-                const pwText = u.password ? u.password : '（旧账号未记录）';
-                name.textContent = '密码：' + pwText + '  ·  @' + u.username;
+                name.textContent = '@' + u.uid + (u.nick && u.nick !== u.uid ? '  ·  ' + u.nick : '');
                 const t = document.createElement('div');
                 t.className = 'admin-time';
-                t.textContent = '上次登录：' + timeAgo(u.lastLogin);
+                t.textContent = '积分 ' + (u.rating || 1500) + '  ·  对局 ' + (u.games || 0) + '  ·  胜 ' + (u.wins || 0);
                 info.appendChild(name); info.appendChild(t);
                 const del = document.createElement('button');
                 del.className = 'admin-del-btn';
                 del.textContent = '注销';
                 del.title = '注销该用户账号（不可恢复）';
-                del.onclick = () => deleteAccount(del, u.username);
+                del.onclick = () => deleteAccount(del, u.uid);
                 row.appendChild(av); row.appendChild(info); row.appendChild(del);
                 listEl.appendChild(row);
                 renderAvatarEl(av, u.avatar);
