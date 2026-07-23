@@ -152,6 +152,7 @@ function handleProfileSet(payload) {
   try { msg = JSON.parse(payload.toString()); } catch (e) { return; }
   const uid = msg && msg.uid;
   if (!uid) return;
+  const isNew = !users[uid];
   const p = getProfile(uid);
   let changed = false;
   if (msg.nick && typeof msg.nick === 'string') {
@@ -161,9 +162,11 @@ function handleProfileSet(payload) {
   if (typeof msg.avatar === 'string' && msg.avatar.length > 0 && msg.avatar.length <= 256 && msg.avatar !== p.avatar) {
     p.avatar = msg.avatar; changed = true;
   }
-  if (!changed) return;
+  // 新用户首次上线即登记（初始积分 1500 计入排行榜），即使昵称/头像未变化也要写入并上榜；
+  // 仅「已存在且无任何变化」的用户才跳过，避免无谓写库与刷榜。
+  if (!isNew && !changed) return;
   saveUsers();          // 写本地 + 触发近实时入库 + 实时推送榜单
-  console.log('[profile] 已实时更新个人资料', uid, '->', p.nick);
+  console.log('[profile] 已' + (isNew ? '登记新用户' : '更新个人资料'), uid, '->', p.nick, isNew ? '(初始积分 ' + p.rating + ')' : '');
 }
 
 // ---------- 实时排行榜 ----------
@@ -320,10 +323,10 @@ async function start() {
       if (err) console.error('[mqtt] 订阅失败', err.message);
       else console.log('[mqtt] 已订阅', PROFILE_SET_TOPIC);
     });
-    // 启动即发布一次排行榜；并定期刷新，确保后订阅的客户端也能拿到最新榜单
+    // 启动即发布一次排行榜；并每 10s 心跳刷新，确保「每时每刻」实时，后订阅的客户端也能拿到最新榜单
     publishLeaderboard();
     if (!start._lbTimer) {
-      start._lbTimer = setInterval(publishLeaderboard, 30000);
+      start._lbTimer = setInterval(publishLeaderboard, 10000);
     }
   });
 
