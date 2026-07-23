@@ -3537,6 +3537,7 @@
         let chState = null;     // 当前棋盘（可变副本）
         let chDoneFlag = false;
         let chShowTarget = false;
+        let chPlayMove = null;   // 玩家落下的那一步 [x,y]
 
         function chLoadProgress() {
             try {
@@ -3690,7 +3691,46 @@
                 placed++;
             }
 
-            return { n, tier, title, desc, success, color, targets, board, guided: n <= 60 };
+            // 实时通关判定目标：落子后棋盘需达成何种棋形（由棋盘真实状态决定，而非仅比对坐标）
+            let goal;
+            if (tier === 'basic') goal = (n <= 10) ? 'live4' : (n <= 20) ? 'live3' : 'block';
+            else if (tier === 'adv') {
+                const kind = (n <= 70) ? (n % 3) : (n <= 100 ? (n % 2) + 3 : (n % 4));
+                goal = ['five', 'live4', 'live3', 'block', 'block'][kind];
+            } else goal = (n <= 150) ? 'opening' : 'double3';
+
+            return { n, tier, title, desc, success, color, targets, board, guided: n <= 60, goal };
+        }
+
+        // 检测 board 上 color 的连续段（len 长度）：open=两端皆空的段数，any=总段数
+        function chCountRuns(board, color, len) {
+            let open = 0, any = 0;
+            for (const [dx, dy] of CH_DIRS) {
+                for (let y = 0; y < BOARD_SIZE; y++) for (let x = 0; x < BOARD_SIZE; x++) {
+                    let ok = true;
+                    for (let i = 0; i < len; i++) {
+                        const nx = x + dx * i, ny = y + dy * i;
+                        if (nx < 0 || nx >= BOARD_SIZE || ny < 0 || ny >= BOARD_SIZE || board[ny][nx] !== color) { ok = false; break; }
+                    }
+                    if (!ok) continue;
+                    any++;
+                    const bx = x - dx, by = y - dy, ax = x + dx * len, ay = y + dy * len;
+                    const bEmpty = (bx >= 0 && bx < BOARD_SIZE && by >= 0 && by < BOARD_SIZE && board[by][bx] === 0);
+                    const aEmpty = (ax >= 0 && ax < BOARD_SIZE && ay >= 0 && ay < BOARD_SIZE && board[ay][ax] === 0);
+                    if (bEmpty && aEmpty) open++;
+                }
+            }
+            return { open, any };
+        }
+
+        // 实时判定：玩家落子后，棋盘是否已达成该关目标棋形
+        function chCheckGoal(board, color, goal) {
+            if (goal === 'five') return chCountRuns(board, color, 5).any > 0;
+            if (goal === 'live4') return chCountRuns(board, color, 4).open > 0;
+            if (goal === 'live3') return chCountRuns(board, color, 3).open > 0;
+            if (goal === 'double3') return chCountRuns(board, color, 3).open >= 2;
+            // 'block' / 'opening' 由点击是否命中 targets 决定（见点击处理），此处返回 false
+            return false;
         }
 
         function chDrawBoard(phase) {
@@ -3764,6 +3804,7 @@
                 ? '🔆 在闪烁的空位落子' : '🧩 找出最佳一手（卡住可点「💡 提示」）';
             document.getElementById('chSelect').style.display = 'none';
             document.getElementById('chPlay').style.display = 'block';
+            chPlayMove = null;
             chRefreshNextBtn();
             chDrawBoard(0.5);
         }
@@ -3796,6 +3837,7 @@
             chState = chCurrent.board.map(r => r.slice());
             chDoneFlag = false;
             chShowTarget = chCurrent.guided;
+            chPlayMove = null;
             const fb = document.getElementById('chFeedback'); fb.textContent = ''; fb.className = 'ch-feedback';
             chDrawBoard(0.5);
         }
@@ -3815,18 +3857,34 @@
                 const mx = (e.clientX - rect.left) * scale, my = (e.clientY - rect.top) * scale;
                 const x = Math.round((mx - PAD) / CELL), y = Math.round((my - PAD) / CELL);
                 const fb = document.getElementById('chFeedback');
+                if (x < 0 || x >= BOARD_SIZE || y < 0 || y >= BOARD_SIZE) return;
+                // 已落子的位置（预置子或玩家已下的那一手）不可再点
+                if (chState[y][x] !== 0) {
+                    if (chPlayMove && chPlayMove[0] === x && chPlayMove[1] === y)
+                        fb.textContent = '已在此落子，换位置请先「↺ 重置」', fb.className = 'ch-feedback warn';
+                    else { fb.textContent = '该位置已有棋子'; fb.className = 'ch-feedback warn'; }
+                    return;
+                }
+                // 玩家每关只下一手：落子前先清除上一步玩家落子，再下这一步（可反复尝试不同落点）
+                if (chPlayMove) chState[chPlayMove[1]][chPlayMove[0]] = 0;
+                chState[y][x] = chCurrent.color;
+                chPlayMove = [x, y];
+                // 实时判定：进攻类关卡检测棋盘棋形；防守/开局类检测是否命中目标点
                 const hit = chCurrent.targets.some(t => t[0] === x && t[1] === y);
-                if (hit) {
-                    chState[y][x] = chCurrent.color; chDoneFlag = true;
+                const reached = (chCurrent.goal === 'block' || chCurrent.goal === 'opening')
+                    ? hit
+                    : chCheckGoal(chState, chCurrent.color, chCurrent.goal);
+                if (reached) {
+                    chDoneFlag = true;
                     if (!chProgress.done.includes(chCurrent.n)) chProgress.done.push(chCurrent.n);
                     chProgress.unlockedMax = Math.max(chProgress.unlockedMax, Math.min(CH_TOTAL, chCurrent.n + 1));
                     chSaveProgress();
                     fb.textContent = '✅ ' + chCurrent.success; fb.className = 'ch-feedback ok';
                     chRefreshNextBtn();
-                    chDrawBoard(0.5);
-                } else if (x >= 0 && x < BOARD_SIZE && y >= 0 && y < BOARD_SIZE && chState[y][x] === 0) {
-                    fb.textContent = '🤔 这里不是关键点，再想想～'; fb.className = 'ch-feedback warn';
+                } else {
+                    fb.textContent = '🤔 这一步还没达成目标，换个点试试（或点「💡 提示」）'; fb.className = 'ch-feedback warn';
                 }
+                chDrawBoard(0.5);
             });
         }
 
