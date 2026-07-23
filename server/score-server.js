@@ -37,6 +37,7 @@ const FLOOR = Number(process.env.FLOOR || 100);  // 积分下限
 const REQ_TOPIC = 'gomoku/score/req';
 const RESP_TOPIC = 'gomoku/score/resp';
 const LEADERBOARD_TOPIC = 'gomoku/leaderboard'; // 排行榜刷新信号：服务端发布轻量 ping（retained），客户端据此从仓库重拉用户数据
+const PROFILE_SET_TOPIC = 'gomoku/profile/set'; // 客户端实时上报个人资料（昵称/头像）变化；服务端即时写入仓库个人用户数据
 const LEADERBOARD_LIMIT = 100;
 // GitHub 持久化：把「每位用户的个人数据（含积分）」同步进仓库，排行榜即依据这些数据刷新
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN || '';
@@ -138,6 +139,33 @@ function settle(a, b, sa, aMeta, bMeta) {
   };
 }
 
+/**
+ * 实时处理客户端上报的个人资料变化（昵称/头像）。
+ * 客户端在「修改昵称」或「登录」时向 gomoku/profile/set 发布 {uid,nick,avatar}，
+ * 服务端据此更新该用户的个人数据，并即时写入仓库（排行榜据此刷新）。
+ * 注意：头像若为体积较大的 data: URL（本地上传图片）则忽略，避免 MQTT/仓库膨胀；
+ *       该情况下头像仍会在对局结算时由客户端随赛果一并上报。
+ */
+function handleProfileSet(payload) {
+  let msg;
+  try { msg = JSON.parse(payload.toString()); } catch (e) { return; }
+  const uid = msg && msg.uid;
+  if (!uid) return;
+  const p = getProfile(uid);
+  let changed = false;
+  if (msg.nick && typeof msg.nick === 'string') {
+    const nick = msg.nick.trim().slice(0, 64);
+    if (nick && nick !== p.nick) { p.nick = nick; changed = true; }
+  }
+  if (typeof msg.avatar === 'string' && msg.avatar.length > 0 && msg.avatar.length <= 256 && msg.avatar !== p.avatar) {
+    p.avatar = msg.avatar; changed = true;
+  }
+  if (!changed) return;
+  saveUsers();          // 写本地 + 触发近实时入库
+  publishLeaderboard(); // 昵称变化也刷新排行榜
+  console.log('[profile] 已实时更新个人资料', uid, '->', p.nick);
+}
+
 // ---------- 排行榜刷新信号 ----------
 // 不直接发布榜单内容，而是发布一条轻量 ping（retained）。客户端在「读取排行榜」时，
 // 会依据仓库中的用户个人信息数据（data/users.json）重新拉取并刷新排行榜。
@@ -192,14 +220,23 @@ async function pushUsersToGithub() {
   }
 }
 
-// 结算后 5s 内合并多次写，再统一推送一次，避免高频对局频繁打 GitHub API
+// 实时入库：单条变更在 ~GH_COALESCE_MS 内落地仓库；突发多次变更在该窗口内合并，避免高频打 GitHub API。
+// 既保证“用户个人资料（昵称/积分）一变化就写入库”，又不会因对局洪峰触发限流。
+const GH_COALESCE_MS = 1000; // 合并窗口（毫秒）
+let ghLastPushTs = 0;
 function scheduleGithubPush() {
   ghDirty = true;
   if (ghPushTimer) return;
-  ghPushTimer = setTimeout(() => {
+  const sinceLast = Date.now() - ghLastPushTs;
+  const wait = sinceLast >= GH_COALESCE_MS ? 0 : (GH_COALESCE_MS - sinceLast);
+  ghPushTimer = setTimeout(async () => {
     ghPushTimer = null;
-    if (ghDirty) { ghDirty = false; pushUsersToGithub(); }
-  }, 5000);
+    if (ghDirty) {
+      ghDirty = false;
+      ghLastPushTs = Date.now();
+      try { await pushUsersToGithub(); } catch (e) { console.error('[github] push 异常', e.message); }
+    }
+  }, wait);
 }
 
 // 启动引导：本地空表时，从仓库 data/users.json 拉取作为权威初始数据（GitHub 为真相源）
@@ -264,6 +301,10 @@ async function start() {
       if (err) console.error('[mqtt] 订阅失败', err.message);
       else console.log('[mqtt] 已订阅', REQ_TOPIC);
     });
+    client.subscribe(PROFILE_SET_TOPIC, { qos: 0 }, (err) => {
+      if (err) console.error('[mqtt] 订阅失败', err.message);
+      else console.log('[mqtt] 已订阅', PROFILE_SET_TOPIC);
+    });
     // 启动即发布一次排行榜；并定期刷新，确保后订阅的客户端也能拿到最新榜单
     publishLeaderboard();
     if (!start._lbTimer) {
@@ -272,6 +313,7 @@ async function start() {
   });
 
   client.on('message', (topic, payload) => {
+    if (topic === PROFILE_SET_TOPIC) { handleProfileSet(payload); return; }
     if (topic !== REQ_TOPIC) return;
     let msg;
     try { msg = JSON.parse(payload.toString()); } catch (e) { return; }
