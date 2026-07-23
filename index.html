@@ -1095,6 +1095,37 @@
         .online-dot { color: #2e9e4f; font-weight: bold; }
         .offline-dot { color: #b0b0b0; font-weight: bold; }
 
+        /* ===== 房主邀请好友面板（房间内） ===== */
+        .host-friend-panel {
+            width: min(520px, 94%);
+            margin: 12px auto 0;
+            background: rgba(255, 255, 255, 0.78);
+            border: 2px solid #c9a66b;
+            border-radius: 14px;
+            padding: 12px 16px 14px;
+            box-shadow: 0 6px 18px rgba(139, 69, 19, 0.18);
+        }
+        .host-friend-head {
+            display: flex;
+            align-items: baseline;
+            gap: 8px;
+            margin: 0 0 10px;
+            font-family: 'KaiTi', '楷体', serif;
+            color: #5a3a1a;
+            border-left: 5px solid #c9a66b;
+            padding-left: 10px;
+        }
+        .host-friend-title { font-size: 20px; letter-spacing: 1px; }
+        .host-friend-sub { font-size: 13px; color: #a67c52; font-family: 'Microsoft YaHei', sans-serif; }
+        .host-friend-list { display: flex; flex-direction: column; gap: 8px; max-height: 260px; overflow-y: auto; }
+        .host-friend-empty { color: #a67c52; font-size: 14px; text-align: center; padding: 8px 0; margin: 0; }
+
+        /* ===== 收到好友邀请：弹窗（立即询问是否进入房间） ===== */
+        #inviteModal .modal-box { width: min(420px, 92vw); text-align: center; }
+        #inviteModal .invite-pop-emoji { font-size: 46px; margin: 4px 0 6px; }
+        #inviteModal .invite-pop-room { font-size: 17px; color: #5c3a1e; margin: 10px 0 18px; }
+        #inviteModal .invite-pop-room b { color: #c8551f; font-size: 20px; letter-spacing: 2px; }
+
         /* ===== 飘屏弹窗 ===== */
         .toast {
             position: fixed;
@@ -1502,6 +1533,15 @@
 
             <div class="room-presence" id="peerStatus"></div>
 
+            <!-- 房主邀请好友进房面板（仅房主可见，列出在线好友并可一键邀请） -->
+            <div class="host-friend-panel" id="hostFriendPanel" style="display:none;">
+                <div class="host-friend-head">
+                    <span class="host-friend-title">👥 邀请好友进房</span>
+                    <span class="host-friend-sub" id="hostFriendOnlineCount"></span>
+                </div>
+                <div class="host-friend-list" id="hostFriendList"></div>
+            </div>
+
             <!-- 棋盘区域（游戏开始后显示） -->
             <div class="board-section" id="boardSection">
                 <canvas id="board" width="620" height="620"></canvas>
@@ -1586,6 +1626,22 @@
             </div>
         </div>
     </div>
+
+    <!-- 收到好友邀请：弹窗立即询问是否进入房间 -->
+    <div id="inviteModal" class="modal-overlay">
+        <div class="modal-box">
+            <div class="invite-pop-emoji">📨</div>
+            <h3 class="modal-title">好友邀请进房</h3>
+            <p class="modal-subtitle" id="inviteModalText">好友邀请你加入五子棋房间</p>
+            <p class="invite-pop-room" id="inviteModalRoom"></p>
+            <div class="modal-btn-group">
+                <button class="modal-btn modal-confirm-btn" onclick="acceptInvitePopup()">加入房间</button>
+                <button class="modal-btn modal-cancel-btn" onclick="dismissInvitePopup()">忽略</button>
+            </div>
+        </div>
+    </div>
+
+
 
     <!-- 人机对战：难度选择模态框 -->
     <div id="aiDifficultyModal" class="modal-overlay">
@@ -1935,15 +1991,39 @@
             showToast((m.fromNick || from) + ' 已接受你的好友申请');
         }
         // ===== 邀请进入房间 =====
+        // ===== 邀请进入房间 =====
+        // 给某好友发送「进房邀请」。走非保留消息（retain:false），仅投递给当前在线、已订阅该主题的好友，
+        // 避免离线好友上线后收到早已失效的房间邀请。好友端收到即弹窗询问是否进入。
+        function sendInvitePublish(friendUser, invite) {
+            if (!mqttClient || !mqttClient.connected) { showToast('未连接服务器，无法邀请'); return; }
+            try { mqttClient.publish(INVITE_PREFIX + friendUser + '/' + currentUser, JSON.stringify(invite), { qos: SOCIAL_QOS, retain: false }); } catch (e) {}
+        }
+        // 好友页「邀请对局」：为自己新建一个房间并邀请对方
         function inviteFriendToRoom(friendUser, friendNick) {
             if (!socialReady()) { showToast('请先登录账号'); return; }
             if (myRole) { showToast('你已在房间中，请先退出'); return; }
             myNickname = myNickname || userProfile.nickname || currentUser;
             createRoom(myNickname, false, '', myHostColor);
             const room = currentRoom.number;
-            publishSocial(INVITE_PREFIX + friendUser + '/' + currentUser,
-                { from: currentUser, fromNick: myNickname, room: room, isPrivate: false, password: '', ts: Date.now() });
+            sendInvitePublish(friendUser, { from: currentUser, fromNick: myNickname, room: room, isPrivate: false, password: '', ts: Date.now() });
             showToast('已邀请 ' + (friendNick || friendUser) + ' 加入房间 ' + room);
+        }
+        // 房间内（房主）邀请在线好友进入「当前房间」
+        function inviteFriendToCurrentRoom(friendUser, friendNick) {
+            if (!socialReady()) { showToast('请先登录账号'); return; }
+            if (myRole !== 'host') { showToast('只有房主能邀请好友进房'); return; }
+            if (!currentRoom.number) { showToast('房间尚未就绪'); return; }
+            if (!isFriendOnline(friendUser)) { showToast((friendNick || friendUser) + ' 当前不在线'); return; }
+            const invite = {
+                from: currentUser,
+                fromNick: myNickname || userProfile.nickname || currentUser,
+                room: currentRoom.number,
+                isPrivate: !!currentRoom.isPrivate,
+                password: currentRoom.isPrivate ? currentRoom.password : '',
+                ts: Date.now()
+            };
+            sendInvitePublish(friendUser, invite);
+            showToast('已邀请 ' + (friendNick || friendUser) + ' 进入房间 ' + currentRoom.number);
         }
         function handleInviteMsg(topic, payload) {
             if (!socialReady()) return;
@@ -1954,16 +2034,51 @@
             if (!payload || payload.length === 0) { delete pendingInvites[from]; renderInvites(); return; }
             let m; try { m = JSON.parse(payload.toString()); } catch (e) { return; }
             if (!m || !m.from || !m.room) return;
-            pendingInvites[from] = { from: m.from, fromNick: m.fromNick || m.from, room: m.room, ts: m.ts || Date.now() };
+            pendingInvites[from] = {
+                from: m.from, fromNick: m.fromNick || m.from, room: m.room,
+                isPrivate: !!m.isPrivate, password: m.password || '', ts: m.ts || Date.now()
+            };
             renderInvites();
+            // 立即弹窗询问是否进入房间（若当前已在该房间则不打扰）
+            if (!(myRole && currentRoom.number === m.room)) {
+                showInviteModal(pendingInvites[from]);
+            }
         }
         function acceptInvite(from) {
             const inv = pendingInvites[from]; if (!inv) return;
-            publishSocial(INVITE_PREFIX + currentUser + '/' + from, '');
+            publishSocial(INVITE_PREFIX + currentUser + '/' + from, ''); // 清除对方可能保留的邀请
             delete pendingInvites[from];
             renderInvites();
-            if (myRole) { showToast('你已在房间中'); return; }
-            joinRoom(myNickname || userProfile.nickname || currentUser, inv.room, false, '');
+            hideInviteModal();
+            if (myRole) { cleanupRelay(); } // 已在他处房间：先离开再进入邀请的房间
+            joinRoom(myNickname || userProfile.nickname || currentUser, inv.room, inv.isPrivate, inv.password || '');
+        }
+        // ===== 邀请弹窗（被邀请方立即看到）=====
+        let activeInvite = null;
+        function showInviteModal(inv) {
+            activeInvite = inv;
+            const modal = document.getElementById('inviteModal');
+            if (!modal) return;
+            const txt = document.getElementById('inviteModalText');
+            const room = document.getElementById('inviteModalRoom');
+            if (txt) txt.textContent = (inv.fromNick || inv.from) + ' 邀请你加入五子棋房间';
+            if (room) room.innerHTML = '房间号：<b>' + socEscapeHtml(inv.room) + '</b>' + (inv.isPrivate ? '（私密房，将自动填入密码）' : '（公开房间，可直接进入）');
+            modal.classList.add('active');
+        }
+        function hideInviteModal() {
+            const m = document.getElementById('inviteModal');
+            if (m) m.classList.remove('active');
+            activeInvite = null;
+        }
+        function acceptInvitePopup() {
+            const inv = activeInvite;
+            hideInviteModal();
+            if (inv) acceptInvite(inv.from);
+        }
+        function dismissInvitePopup() {
+            const inv = activeInvite;
+            hideInviteModal();
+            if (inv) { delete pendingInvites[inv.from]; renderInvites(); }
         }
         // ===== 在线状态 =====
         function handlePresenceMsg(topic, payload) {
@@ -1984,6 +2099,9 @@
                 const u = dots[i].getAttribute('data-user');
                 if (u) dots[i].classList.toggle('on', isFriendOnline(u));
             }
+            // 房间内房主好友面板随在线状态实时刷新
+            const panel = document.getElementById('hostFriendPanel');
+            if (panel && panel.style.display !== 'none') renderHostFriends();
         }
         // ===== 渲染 =====
         function renderFriendRequests() {
@@ -2042,6 +2160,43 @@
                     '</span>';
                 list.appendChild(row);
             });
+        }
+        // ===== 房主房间内好友面板 =====
+        // 房主进入房间后显示好友名单，仅在线好友可一键邀请进房。
+        function renderHostFriends() {
+            const list = document.getElementById('hostFriendList');
+            if (!list) return;
+            const fr = loadFriends();
+            const sub = document.getElementById('hostFriendOnlineCount');
+            if (!fr.length) {
+                list.innerHTML = '<p class="host-friend-empty">还没有好友，去「好友」页添加吧～</p>';
+                if (sub) sub.textContent = '';
+                return;
+            }
+            list.innerHTML = '';
+            let onlineCount = 0;
+            fr.forEach(f => {
+                const on = isFriendOnline(f.user);
+                if (on) onlineCount++;
+                const row = document.createElement('div');
+                row.className = 'friend-row';
+                const dot = '<span class="friend-online-dot ' + (on ? 'on' : '') + '"></span>';
+                const btn = on
+                    ? '<button class="friend-btn ok" onclick="inviteFriendToCurrentRoom(\'' + socEscAttr(f.user) + '\',\'' + socEscAttr(f.nick || f.user) + '\')">邀请进房</button>'
+                    : '<button class="friend-btn" disabled style="opacity:.5;cursor:not-allowed;">离线</button>';
+                row.innerHTML = dot + '<span class="friend-name">' + socEscapeHtml(f.nick || f.user) + '</span>' +
+                    '<span class="friend-actions">' + btn + '</span>';
+                list.appendChild(row);
+            });
+            if (sub) sub.textContent = '（在线 ' + onlineCount + '/' + fr.length + '）';
+        }
+        // 根据当前角色/房间状态决定是否展示房主好友面板
+        function updateHostFriendPanel() {
+            const panel = document.getElementById('hostFriendPanel');
+            if (!panel) return;
+            const show = (myRole === 'host') && socialReady() && !!currentRoom.number;
+            panel.style.display = show ? '' : 'none';
+            if (show) renderHostFriends();
         }
         // 进入好友页初始化
         function initFriends() {
@@ -2405,6 +2560,7 @@
             if (myRole === 'host') {
                 startRoomHeartbeat(); // 房主持有大厅房间心跳
                 showSelfCard(myNickname, myAvatar, '房主');
+                updateHostFriendPanel(); // 房主重连后重新展示好友邀请面板
                 updateWaitingText('⏳ 等待对手加入房间...');
                 // 房主重连后：若对局已就绪，重新下发 start 并刷新大厅房间状态
                 if (roomReady) {
@@ -2906,6 +3062,7 @@
                 : ('房间号: ' + number + '（公开，他人可直接加入）')));
             connectRelay();               // 复用「创建房间」交互：接入连接并订阅房间主题
             publishRoomState('waiting');  // 向大厅广播该房间
+            updateHostFriendPanel();      // 房主进入房间后展示好友名单（可邀请在线好友进房）
         }
 
         /**
@@ -5283,6 +5440,7 @@
             document.getElementById('blackPlayerName').classList.add('empty');
             document.getElementById('blackAvatar').textContent = '🙂';
             document.getElementById('whiteAvatar').textContent = '🙂';
+            updateHostFriendPanel(); // 离开房间后隐藏房主好友面板
             switchPage('mainPage');
         }
 
