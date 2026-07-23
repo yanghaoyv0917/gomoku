@@ -146,6 +146,34 @@
             margin-top: 60px;
         }
 
+        /* 主页「个人挑战」按钮变体 */
+        .start-btn.challenge-btn {
+            background: linear-gradient(145deg, #5b8c6e, #3f6b52);
+            border-color: #2f5238;
+        }
+        .start-btn.challenge-btn:hover {
+            background: linear-gradient(145deg, #6ba07f, #4a7a5f);
+        }
+
+        /* ===== 个人挑战页面 ===== */
+        .challenge-section { width: min(660px, 92vw); margin: 10px auto 0; text-align: left; }
+        .challenge-cat { font-family: 'KaiTi', '楷体', serif; color: #5a3a1a; font-size: 22px; letter-spacing: 2px; margin: 18px 0 8px; border-left: 5px solid #c9a66b; padding-left: 10px; }
+        .challenge-list { display: flex; flex-direction: column; gap: 10px; }
+        .challenge-card { background: rgba(255, 255, 255, 0.72); border: 2px solid #c9a66b; border-radius: 12px; overflow: hidden; cursor: pointer; transition: all .2s ease; }
+        .challenge-card:hover { border-color: #e8743b; box-shadow: 0 4px 12px rgba(139, 69, 19, 0.18); }
+        .ch-card-head { display: flex; align-items: center; gap: 10px; padding: 14px 16px; }
+        .ch-icon { font-size: 22px; width: 28px; text-align: center; }
+        .ch-title { flex: 1; font-size: 17px; color: #3a2a14; font-weight: 600; }
+        .ch-arrow { color: #a67c52; font-size: 14px; transition: transform .25s ease; }
+        .challenge-card.open .ch-arrow { transform: rotate(90deg); }
+        .ch-card-body { max-height: 0; overflow: hidden; transition: max-height .3s ease, padding .3s ease; padding: 0 16px; color: #4a3a26; line-height: 1.75; font-size: 15px; }
+        .challenge-card.open .ch-card-body { max-height: 700px; padding: 0 16px 16px; }
+        .ch-card-body b { color: #a8431f; }
+        .shape-line { display: flex; align-items: center; gap: 8px; margin: 6px 0; }
+        .shape-ico { font-size: 19px; letter-spacing: 2px; background: #f3e3cc; border-radius: 6px; padding: 2px 8px; color: #5a3a1a; }
+        .challenge-cta { width: min(660px, 92vw); margin: 22px auto 30px; text-align: center; }
+        .challenge-cta .start-btn { padding: 14px 34px; font-size: 19px; letter-spacing: 3px; }
+
         /* ===== 登录 / 注册 页 ===== */
         .auth-card {
             width: min(420px, 90vw);
@@ -1238,10 +1266,77 @@
             <div class="main-btn-group">
                 <button class="start-btn" onclick="eventHumanVsAi()">人机对战</button>
                 <button class="start-btn" onclick="event1_startGame()">联机对战</button>
+                <button class="start-btn challenge-btn" onclick="switchPage('challengePage')">🎯 个人挑战</button>
             </div>
             <div class="piece-decoration">
                 <div class="piece black"></div>
                 <div class="piece white"></div>
+            </div>
+        </div>
+
+        <!-- 个人挑战页面 -->
+        <div id="challengePage" class="page">
+            <div class="lobby-topbar">
+                <button class="back-btn-inline" onclick="switchPage('mainPage')">←</button>
+                <h2 class="lobby-title">🎯 个人挑战</h2>
+                <span style="width:40px;display:inline-block;"></span>
+            </div>
+            <p class="lobby-subtitle">选择下面的内容，开启你的五子棋进阶学习</p>
+
+            <div class="challenge-section">
+                <h3 class="challenge-cat">📘 基础规则</h3>
+                <div class="challenge-list">
+                    <div class="challenge-card" onclick="toggleChallenge(this)">
+                        <div class="ch-card-head"><span class="ch-icon">♟️</span><span class="ch-title">什么是五子棋</span><span class="ch-arrow">▸</span></div>
+                        <div class="ch-card-body">五子棋是双人在 <b>15×15</b> 棋盘的交叉点上轮流落子的棋类游戏。黑棋先手、白棋后手，率先在横向、纵向或斜向连成 <b>连续五子</b> 的一方获胜。</div>
+                    </div>
+                    <div class="challenge-card" onclick="toggleChallenge(this)">
+                        <div class="ch-card-head"><span class="ch-icon">🏁</span><span class="ch-title">如何判定胜负</span><span class="ch-arrow">▸</span></div>
+                        <div class="ch-card-body">任意方向上连成 <b>连续五子</b> 即判胜。休闲（无禁手）规则下，连成六子及以上同样判胜（即"长连"也赢）。当棋盘下满仍无人连五，则为和棋。</div>
+                    </div>
+                    <div class="challenge-card" onclick="toggleChallenge(this)">
+                        <div class="ch-card-head"><span class="ch-icon">⚫</span><span class="ch-title">黑棋先手优势</span><span class="ch-arrow">▸</span></div>
+                        <div class="ch-card-body">黑方先落子，天然拥有先手进攻优势。正式比赛中常用 <b>「三手交换」「五手两打」</b> 等规则来平衡先后手；本游戏为休闲对战，黑先即可，自由尽兴。</div>
+                    </div>
+                    <div class="challenge-card" onclick="toggleChallenge(this)">
+                        <div class="ch-card-head"><span class="ch-icon">🚫</span><span class="ch-title">禁手规则（进阶）</span><span class="ch-arrow">▸</span></div>
+                        <div class="ch-card-body">职业规则中，<b>黑棋</b>禁止落出「三三」「四四」「长连」三种禁手（白棋无禁手），以削弱先手优势。本游戏为休闲模式，<b>默认不启用禁手</b>，双方均可自由落子，规则更轻松。</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="challenge-section">
+                <h3 class="challenge-cat">⚔️ 棋形与阵法</h3>
+                <div class="challenge-list">
+                    <div class="challenge-card" onclick="toggleChallenge(this)">
+                        <div class="ch-card-head"><span class="ch-icon">🔥</span><span class="ch-title">活四（必胜棋形）</span><span class="ch-arrow">▸</span></div>
+                        <div class="ch-card-body">两端都无子阻挡、再一手即成五，是 <b>必胜棋形</b>。示意：<span class="shape-line"><span class="shape-ico">○ ● ● ● ● ○</span></span>（中间四子两端皆空）。一旦形成活四，对手无法同时堵两端。</div>
+                    </div>
+                    <div class="challenge-card" onclick="toggleChallenge(this)">
+                        <div class="ch-card-head"><span class="ch-icon">⚡</span><span class="ch-title">冲四（必须防守）</span><span class="ch-arrow">▸</span></div>
+                        <div class="ch-card-body">一端被对方挡住、另一端为空，再一手即成五，<b>必须立即防守</b>。示意：<span class="shape-line"><span class="shape-ico">✕ ● ● ● ● ○</span></span>。冲四是制造「叫杀」的常用手段。</div>
+                    </div>
+                    <div class="challenge-card" onclick="toggleChallenge(this)">
+                        <div class="ch-card-head"><span class="ch-icon">🌟</span><span class="ch-title">活三（抢攻要点）</span><span class="ch-arrow">▸</span></div>
+                        <div class="ch-card-body">再一手可发展为活四，威胁极大，需抢先防守或自己抢攻。示意：<span class="shape-line"><span class="shape-ico">○ ● ● ● ○</span></span>。实战中「先做活三」往往是进攻起点。</div>
+                    </div>
+                    <div class="challenge-card" onclick="toggleChallenge(this)">
+                        <div class="ch-card-head"><span class="ch-icon">🌫️</span><span class="ch-title">眠三 / 活二</span><span class="ch-arrow">▸</span></div>
+                        <div class="ch-card-body">眠三：被阻挡、只能形成冲四的三，威胁较弱，示意 <span class="shape-line"><span class="shape-ico">✕ ● ● ● ○</span></span>。活二：再一手可成活三的基础棋形，示意 <span class="shape-line"><span class="shape-ico">○ ● ● ○</span></span>。积小成多、逐步做棋是核心思路。</div>
+                    </div>
+                    <div class="challenge-card" onclick="toggleChallenge(this)">
+                        <div class="ch-card-head"><span class="ch-icon">🧩</span><span class="ch-title">开局阵法（定石）</span><span class="ch-arrow">▸</span></div>
+                        <div class="ch-card-body">黑棋前两手形成的经典阵型称为「定石」，是进攻与连接的起点。常见的有 <b>花月、浦月、流星、云雨、溪月、寒星</b> 等：花月/浦月偏进攻，流星偏平衡。建议先记住 1–2 种，对局中据此展开。</div>
+                    </div>
+                    <div class="challenge-card" onclick="toggleChallenge(this)">
+                        <div class="ch-card-head"><span class="ch-icon">🧠</span><span class="ch-title">进攻与防守原则</span><span class="ch-arrow">▸</span></div>
+                        <div class="ch-card-body">① 自己同时拥有多个「冲四/活三」威胁时，对手只能堵一个，另一手即可成五——这就是「多线进攻」。② 防守时优先堵对方 <b>活三、冲四</b>，再看己方能否反杀。③ 棋子要连成「线」而非散点，连接越多越难被防住。</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="challenge-cta">
+                <button class="start-btn" onclick="eventHumanVsAi()">🎮 去人机实战，检验所学 →</button>
             </div>
         </div>
 
@@ -3420,6 +3515,11 @@
             document.querySelectorAll('.page').forEach(page => page.classList.remove('active'));
             const target = document.getElementById(targetPageId);
             if (target) target.classList.add('active');
+        }
+
+        // 个人挑战：展开/收起学习卡片（点击卡片头部切换 .open）
+        function toggleChallenge(card) {
+            card.classList.toggle('open');
         }
 
         // ---------- 创建房间（沿用「创建房间」交互，新增密码与执棋选择） ----------
